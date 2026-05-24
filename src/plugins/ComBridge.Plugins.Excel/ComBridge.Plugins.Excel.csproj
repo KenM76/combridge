@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ComBridge.Plugins.Excel</RootNamespace>
+    <AssemblyName>ComBridge.Plugins.Excel</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <!-- NuGet PIA packages are ref-only by default; force their assemblies to be copied
+         to the output folder so the plugin folder has its dependencies. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\ComBridge.Core\ComBridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Microsoft.Office.Interop.Excel ships as a NuGet package since Office PIAs were
+         retired from GAC distribution. Pulls in Excel + VBIDE interop transitively. -->
+    <PackageReference Include="Microsoft.Office.Interop.Excel" Version="15.0.4795.1001">
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </PackageReference>
+
+    <!-- office.dll (Microsoft.Office.Core PIA, public token 71e9bce111e9429c) is NOT
+         pulled in by the Excel NuGet package on net10+. _Application transitively
+         references types here (MsoTriState, CommandBars, etc.), so loading the
+         interop without office.dll throws FileNotFoundException at first cast.
+         The PIA is installed by Office itself into the GAC at the canonical path
+         below — present on any machine where Office is installed (i.e. wherever
+         this plugin makes sense). -->
+    <Reference Include="office">
+      <HintPath>C:\Windows\assembly\GAC_MSIL\office\15.0.0.0__71e9bce111e9429c\office.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="CopyToPluginsRoot" AfterTargets="Build">
+    <PropertyGroup>
+      <PluginsRoot>$(MSBuildThisFileDirectory)..\..\..\plugins\Excel</PluginsRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <PluginDeploy Include="$(OutputPath)*.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(PluginsRoot)" />
+    <Copy SourceFiles="@(PluginDeploy)" DestinationFolder="$(PluginsRoot)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

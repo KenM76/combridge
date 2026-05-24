@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ComBridge.Cli</RootNamespace>
+    <AssemblyName>combridge</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ComBridge.Core\ComBridge.Core.csproj" />
+  </ItemGroup>
+</Project>

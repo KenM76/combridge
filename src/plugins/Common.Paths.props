@@ -1,0 +1,55 @@
+<Project>
+
+  <!--
+    Common.Paths.props — shared, cross-platform-clean path-resolution helper
+    for combridge plugins.
+
+    A plugin imports this near the top of its .csproj:
+
+        <Import Project="..\Common.Paths.props" />
+
+    Then declares its machine-specific paths with a fallback chain
+    (explicit property > env var > [Windows] registry > default) and lists
+    the interop files that MUST exist via the RequiredInteropFile item.
+    This file:
+
+      1. Imports a local, gitignored "paths.props" sitting next to the
+         importing .csproj, if present. That file is layer 2 of the
+         resolution chain (a persistent per-machine override the user
+         copies from paths.props.example). It is imported FIRST so any
+         property it sets wins over the env/registry/default fallbacks
+         the plugin .csproj declares with Condition="'$(Prop)' == ''".
+
+      2. Provides a reusable validation target that fails the build early
+         with a full diagnostic if any RequiredInteropFile is missing —
+         instead of a cryptic "metadata file could not be found".
+
+    Nothing here is Windows-specific. Registry probing (the only
+    Windows-only step) lives in each plugin's .csproj, gated by
+    Condition="'$(OS)' == 'Windows_NT'". A non-Windows plugin can use
+    this file unchanged and simply omit the registry layer.
+  -->
+
+  <!-- Layer 2: per-plugin local override. $(MSBuildProjectDirectory) is the
+       directory of the .csproj performing the <Import>, NOT this file's dir. -->
+  <Import Project="$(MSBuildProjectDirectory)\paths.props"
+          Condition="Exists('$(MSBuildProjectDirectory)\paths.props')" />
+
+  <!-- Early, clear validation. Runs before reference resolution and compile
+       so a bad/absent path produces a readable message, not an MSBuild
+       internal error. Only active if the plugin declared RequiredInteropFile. -->
+  <Target Name="ValidateRequiredInteropFiles"
+          BeforeTargets="ResolveAssemblyReferences;CoreCompile"
+          Condition="'@(RequiredInteropFile)' != ''">
+
+    <ItemGroup>
+      <_MissingInteropFile Include="@(RequiredInteropFile)"
+                           Condition="!Exists('%(RequiredInteropFile.Identity)')" />
+    </ItemGroup>
+
+    <Error Condition="'@(_MissingInteropFile)' != ''"
+           Code="COMBRIDGE001"
+           Text="[combridge] Plugin '$(MSBuildProjectName)' could not locate its required interop assemblies.%0a%0aMissing file(s):%0a  @(_MissingInteropFile, '%0a  ')%0a%0aResolution chain (first non-empty wins):%0a  1. MSBuild property override:   dotnet build /p:&lt;PathProperty&gt;=...%0a  2. paths.props next to the .csproj:   copy paths.props.example to paths.props and edit%0a  3. environment variable (see paths.props.example for the exact name)%0a  4. Windows registry auto-probe (Windows only)%0a  5. built-in default%0a%0a$(RequiredInteropDiagnostic)%0aFix one of the above so the listed file(s) exist, then rebuild." />
+  </Target>
+
+</Project>

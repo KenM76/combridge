@@ -1,0 +1,35 @@
+<Project>
+
+  <!--
+    paths.props.example  →  copy to  paths.props  (same folder) and edit.
+
+    `paths.props` is gitignored and is layer 2 of the path-resolution chain
+    (see ../Common.Paths.props for the full chain). Anything you set here
+    overrides the environment-variable, registry, and default fallbacks,
+    but is itself overridden by an explicit `dotnet build /p:Prop=value`.
+
+    You usually do NOT need this file: on a normal Windows machine with
+    SolidWorks installed, the registry auto-probe (layer 4) finds the
+    interop DLLs with zero configuration. Use this only if SolidWorks is
+    installed somewhere non-standard, you have multiple SW versions, or
+    you keep the redist DLLs outside the install tree.
+  -->
+
+  <PropertyGroup>
+
+    <!-- Folder that directly contains:
+           SolidWorks.Interop.sldworks.dll
+           SolidWorks.Interop.swconst.dll
+           SolidWorks.Interop.swcommands.dll
+         Typically <SW install>\api\redist .
+
+         Equivalent overrides (any one works; this file = layer 2):
+           layer 1  dotnet build /p:SolidWorksApiRedist="D:\SW2025\api\redist"
+           layer 3  set SOLIDWORKS_API_REDIST=D:\SW2025\api\redist
+           layer 4  (auto) HKLM\SOFTWARE\SolidWorks\Setup\'Solidworks Folder'
+    -->
+    <SolidWorksApiRedist>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist</SolidWorksApiRedist>
+
+  </PropertyGroup>
+
+</Project>

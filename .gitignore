@@ -1,0 +1,36 @@
+# Build outputs
+bin/
+obj/
+
+# Root-level deployment artifacts (staged from src/.../bin/Release/ via cp).
+# Re-created on every build; never commit.
+/combridge.exe
+/combridge.dll
+/combridge.deps.json
+/combridge.runtimeconfig.json
+/ComBridge.Core.dll
+/Microsoft.CodeAnalysis.*.dll
+
+# CopyToPluginsRoot deployment folder — rebuilt by every plugin csproj's
+# AfterTargets="Build" step. Source of truth lives under src/plugins/.
+/plugins/
+
+# IDE / editor cruft
+*.user
+.vs/
+*.suo
+.vscode/
+.idea/
+
+# Per-machine path overrides (layer 2 of the path-resolution chain).
+# The committed template is paths.props.example; the live file is local-only.
+paths.props
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Scratch / test scribblings (not part of the project)
+/test/
+/scratch/

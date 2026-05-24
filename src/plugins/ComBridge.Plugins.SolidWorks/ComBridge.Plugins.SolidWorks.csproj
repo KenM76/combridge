@@ -1,0 +1,85 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared path-resolution helper. Imports the local (gitignored)
+       paths.props if present, and provides the RequiredInteropFile
+       validation target. MUST be imported before the fallback
+       PropertyGroup below so a paths.props override wins. -->
+  <Import Project="..\Common.Paths.props" />
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ComBridge.Plugins.SolidWorks</RootNamespace>
+    <AssemblyName>ComBridge.Plugins.SolidWorks</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <PluginOutputName>SolidWorks</PluginOutputName>
+  </PropertyGroup>
+
+  <!--
+    Resolve SolidWorksApiRedist (folder containing SolidWorks.Interop.*.dll)
+    via the robust fallback chain. Layer 1 (MSBuild /p: global property) and
+    layer 2 (paths.props, imported above) win automatically because each
+    assignment below is gated on the property still being empty.
+  -->
+  <PropertyGroup>
+    <!-- Layer 3: environment variable. -->
+    <SolidWorksApiRedist Condition="'$(SolidWorksApiRedist)' == ''">$([System.Environment]::GetEnvironmentVariable('SOLIDWORKS_API_REDIST'))</SolidWorksApiRedist>
+
+    <!-- Layer 4: Windows registry auto-probe. SolidWorks writes its install
+         root to HKLM\SOFTWARE\SolidWorks\Setup\'Solidworks Folder'. Gated to
+         Windows so this file stays cross-platform clean. -->
+    <_SwRegFolder Condition="'$(SolidWorksApiRedist)' == '' and '$(OS)' == 'Windows_NT'">$([MSBuild]::GetRegistryValueFromView('HKEY_LOCAL_MACHINE\SOFTWARE\SolidWorks\Setup', 'Solidworks Folder', null, RegistryView.Registry64))</_SwRegFolder>
+    <SolidWorksApiRedist Condition="'$(SolidWorksApiRedist)' == '' and '$(_SwRegFolder)' != ''">$([System.IO.Path]::Combine('$(_SwRegFolder)', 'api', 'redist'))</SolidWorksApiRedist>
+
+    <!-- Layer 5: built-in default (canonical install location). -->
+    <SolidWorksApiRedist Condition="'$(SolidWorksApiRedist)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist</SolidWorksApiRedist>
+
+    <!-- Appended to the COMBRIDGE001 error so the user sees what was resolved. -->
+    <RequiredInteropDiagnostic>SolidWorksApiRedist resolved to: '$(SolidWorksApiRedist)'%0a(env var: SOLIDWORKS_API_REDIST | registry: HKLM\SOFTWARE\SolidWorks\Setup\'Solidworks Folder')%0a</RequiredInteropDiagnostic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ComBridge.Core\ComBridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="SolidWorks.Interop.sldworks">
+      <HintPath>$(SolidWorksApiRedist)\SolidWorks.Interop.sldworks.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swconst">
+      <HintPath>$(SolidWorksApiRedist)\SolidWorks.Interop.swconst.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swcommands">
+      <HintPath>$(SolidWorksApiRedist)\SolidWorks.Interop.swcommands.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Files that MUST exist for the build to succeed. Common.Paths.props's
+       ValidateRequiredInteropFiles target reads this and emits COMBRIDGE001
+       with the full resolution-chain diagnostic if any are missing. -->
+  <ItemGroup>
+    <RequiredInteropFile Include="$(SolidWorksApiRedist)\SolidWorks.Interop.sldworks.dll" />
+    <RequiredInteropFile Include="$(SolidWorksApiRedist)\SolidWorks.Interop.swconst.dll" />
+    <RequiredInteropFile Include="$(SolidWorksApiRedist)\SolidWorks.Interop.swcommands.dll" />
+  </ItemGroup>
+
+  <!-- After build, copy plugin DLLs into <repo>/plugins/SolidWorks/ so the host finds them. -->
+  <Target Name="CopyToPluginsRoot" AfterTargets="Build">
+    <PropertyGroup>
+      <PluginsRoot>$(MSBuildThisFileDirectory)..\..\..\plugins\SolidWorks</PluginsRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <PluginDeploy Include="$(OutputPath)*.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(PluginsRoot)" />
+    <Copy SourceFiles="@(PluginDeploy)" DestinationFolder="$(PluginsRoot)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
