@@ -116,6 +116,14 @@ internal sealed class StatusCommand : IBridgeCommand
 
 `run-script` and `list-sessions` are built in — you don't need to implement them.
 
+End users can also drop their own `.csx` files into `plugins/<YourPlugin>/commands/`
+and they'll auto-discover as named commands. Anything in your plugin's
+globals (the type returned from `CreateGlobals`) is accessible from user
+scripts. See `LLM/extending.md` for the convention; you as a plugin author
+don't need to do anything special — the auto-discovery happens at the
+host level. Your typed `IBridgeCommand` implementations win against
+same-named scripts (so you control the canonical API surface).
+
 ## 3a. Machine-specific interop paths (HintPath plugins only)
 
 Skip this entire section if your interop comes from a **NuGet PIA package**

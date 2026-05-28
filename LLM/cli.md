@@ -112,6 +112,22 @@ Select with --session N (1=MRU) | --session pid:NNNN | --session <title> | --ses
 Default with no --session = MRU (most-recently-focused window).
 ```
 
+## `list-commands` output format
+
+```
+  run-script      (built-in)  run-script <scriptFile.csx>
+  list-sessions   (built-in)  list running instances of this plugin's app
+  active-doc      (plugin)    active-doc   (prints title + type of active document)
+  my-export       (script)    my-export   (.csx: my-export.csx)
+```
+
+Category annotations:
+- **`(built-in)`** — provided by combridge itself, available on every plugin
+- **`(plugin)`** — defined by the plugin's `IComBridgePlugin.Commands` (typed C# `IBridgeCommand`)
+- **`(script)`** — auto-discovered `.csx` file in `<plugin-deploy-dir>/commands/`. See `LLM/extending.md` for the convention.
+
+Command lookup precedence on name collision: built-in beats plugin beats script. A scripted command can never shadow a built-in or a typed command.
+
 If no sessions: `(no running <plugin-name> sessions in the ROT)`.
 
 Order is MRU (most-recently-focused first). `#1` is always the session whose

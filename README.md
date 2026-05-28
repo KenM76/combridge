@@ -168,6 +168,34 @@ See [`CONSUMING_CORE.md`](CONSUMING_CORE.md) (humans) or
 
 `LLM/api.md` documents the stable API surface and stability tiers per type.
 
+## Adding your own commands to an existing plugin
+
+You can add custom named commands to any shipped plugin without forking
+or recompiling it. Drop a `.csx` file into the plugin's `commands/`
+folder and it becomes an invokable command:
+
+```
+plugins/SolidWorks/commands/my-export.csx     ← create this
+```
+
+```powershell
+combridge solidworks list-commands
+# →   active-doc      (plugin)    active-doc ...
+#     my-export       (script)    my-export   (.csx: my-export.csx)   ← auto-discovered
+
+combridge solidworks my-export out.txt
+# runs your .csx against the SW plugin's globals
+```
+
+The script body uses the plugin's globals (`swApp`, `xlApp`, etc.) just like
+`run-script` does. Built-in commands and the plugin's own typed commands
+take precedence on name collision — your scripted command can never
+accidentally shadow them.
+
+See [`LLM/extending.md`](LLM/extending.md) for the full convention,
+including "why not DLL-based sub-plugins" and the criteria for adding
+that later if needed.
+
 ## Adding a new plugin
 
 See [`PLUGIN_GUIDE.md`](PLUGIN_GUIDE.md) (humans) or

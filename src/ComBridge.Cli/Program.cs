@@ -91,10 +91,12 @@ internal static class Program
 
             if (commandName == "list-commands")
             {
-                Console.WriteLine($"  run-script    (built-in)  run-script <scriptFile.csx>");
-                Console.WriteLine($"  list-sessions (built-in)  list running instances of this plugin's app");
+                Console.WriteLine($"  {"run-script",-15} (built-in)  run-script <scriptFile.csx>");
+                Console.WriteLine($"  {"list-sessions",-15} (built-in)  list running instances of this plugin's app");
                 foreach (var c in plugin.Commands)
-                    Console.WriteLine($"  {c.Name,-13} {c.Usage}");
+                    Console.WriteLine($"  {c.Name,-15} (plugin)    {c.Usage}");
+                foreach (var c in PluginLoader.GetScriptedCommands(plugin))
+                    Console.WriteLine($"  {c.Name,-15} (script)    {c.Usage}");
                 return 0;
             }
 
@@ -124,15 +126,25 @@ internal static class Program
             var outputFile = rest[^1];
             var cmdArgs = rest[..^1];
 
-            // Built-in run-script + plugin commands.
-            IBridgeCommand? command = commandName == "run-script"
-                ? new RunScriptCommand(plugin)
-                : plugin.Commands.FirstOrDefault(c =>
-                    string.Equals(c.Name, commandName, StringComparison.OrdinalIgnoreCase));
+            // Command lookup precedence:
+            //   1. Built-in `run-script` (always wins on name collision)
+            //   2. Plugin's typed Commands (the plugin author's intentional API)
+            //   3. Auto-discovered scripted commands in <plugin-dir>/commands/*.csx
+            //      (per-user / per-site extensions — "Shape A" in LLM/extending.md)
+            // A scripted command can never shadow a built-in or a typed command;
+            // the plugin author and the host stay authoritative.
+            IBridgeCommand? command =
+                commandName == "run-script"
+                    ? new RunScriptCommand(plugin)
+                    : plugin.Commands.FirstOrDefault(c =>
+                        string.Equals(c.Name, commandName, StringComparison.OrdinalIgnoreCase))
+                      ?? PluginLoader.GetScriptedCommands(plugin).FirstOrDefault(c =>
+                        string.Equals(c.Name, commandName, StringComparison.OrdinalIgnoreCase));
 
             if (command is null)
             {
                 Console.Error.WriteLine($"ERROR: plugin '{plugin.Name}' has no command '{commandName}'.");
+                Console.Error.WriteLine($"Run 'combridge {plugin.Name} list-commands' to see what's available.");
                 return 64;
             }
 

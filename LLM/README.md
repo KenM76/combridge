@@ -19,6 +19,7 @@ PLUGIN_LOAD_DIR: `<exeDir>/plugins/<Name>/<assembly>.dll`
 | `LLM/cli.md` | Exact CLI grammar, flag parsing order, exit codes | Writing scripts that call `combridge.exe` |
 | `LLM/plugins.md` | Per-plugin specifics for the 5 shipped plugins (SW + Excel + Word + PowerPoint + Outlook) | Using or debugging an existing plugin |
 | `LLM/scripting.md` | Per-plugin .csx recipe cookbook (Excel cell access, Word find/replace, Outlook mail, SW iteration, etc.) | Writing a Roslyn script |
+| `LLM/extending.md` | Per-user / per-site `.csx` commands via `plugins/<Name>/commands/` auto-discovery. Plus "why not DLL-based sub-plugins?" criteria for the deferred Shape B. | Adding a custom named command to a plugin without forking the plugin |
 | `LLM/authoring.md` | **Prescriptive guide for building a NEW plugin.** Four discovery patterns + worked examples for AutoCAD/Inventor/Acrobat/Visio/BricsCAD + verification checklist | Adding plugin support for an app NOT shipped in `src/plugins/` |
 | `LLM/build.md` | Build pitfalls table (csproj, NuGet PIA, namespace, etc.) | A build error or runtime "type not found" |
 | `LLM/paths.md` | Machine-specific path resolution chain (paths.props > env > registry > default > validation) | A plugin can't find its interop DLLs; adding a HintPath-based plugin |

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — per-plugin `.csx` command extensions
+
+### Added
+- **Per-user / per-site scripted commands** — drop a `.csx` file in
+  `plugins/<Name>/commands/` and `combridge` auto-discovers it as a
+  named command (`combridge <plugin> <command-name>`). The script runs
+  in the same Roslyn host as `run-script` with the plugin's globals
+  available. See `LLM/extending.md`.
+- `PluginLoader.GetScriptedCommands(plugin)` — public helper that
+  enumerates the scripted commands for a given plugin.
+- `Commands.ScriptedCommand` — public class wrapping one `.csx` file
+  as an `IBridgeCommand`.
+- `list-commands` output now labels commands by source: `(built-in)`,
+  `(plugin)`, or `(script)`.
+
+### Changed
+- Command dispatcher in `Program.cs` now considers scripted commands
+  after built-ins and typed plugin commands. Built-ins and typed
+  plugin commands ALWAYS win on name collision — scripted commands
+  can never shadow them.
+
+### Deferred (not on roadmap)
+- DLL-based sub-plugins ("Shape B"). Documented in `LLM/extending.md`
+  with the specific scenarios that would warrant implementing it.
+
 ## [0.1.0] — initial public release
 
 Generic COM-automation host for Windows desktop apps, with five shipped

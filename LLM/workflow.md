@@ -31,6 +31,18 @@ User wants to do something with Excel/Word/etc. from a one-liner.
 2. `LLM/plugins.md` § "<app> plugin" for the plugin's commands + selectors
 3. Respond with the exact `combridge <plugin> <command> ...` invocation
 
+### "Add my own named command to [app]'s plugin (without forking it)"
+
+User wants a custom command on an existing plugin — e.g.
+`combridge solidworks my-export-cam` — sourced from their own `.csx`.
+
+1. **`LLM/extending.md`** — explains the `plugins/<Name>/commands/*.csx`
+   auto-discovery convention. The whole answer is one file drop.
+2. `LLM/scripting.md` for the script body itself (per-plugin idioms).
+3. Built. No code change, no plugin fork. Tell the user to verify with
+   `combridge <plugin> list-commands` — the new command should appear
+   labeled `(script)`.
+
 ### "Write me a [.csx] script that does X in [app]"
 
 User wants a Roslyn script that uses an existing plugin's globals.

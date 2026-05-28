@@ -14,6 +14,7 @@ All paths relative to the repo root (the directory containing `combridge.sln`).
 | `static class ScriptHost` | `src/ComBridge.Core/ScriptHost.cs` |
 | `static class PluginLoader` | `src/ComBridge.Core/PluginLoader.cs` |
 | `class Commands.RunScriptCommand` | `src/ComBridge.Core/Commands/RunScriptCommand.cs` |
+| `class Commands.ScriptedCommand` | `src/ComBridge.Core/Commands/ScriptedCommand.cs` (per-user `.csx` extensions, "Shape A") |
 
 ## Internal types
 
@@ -107,6 +108,7 @@ All paths relative to the repo root (the directory containing `combridge.sln`).
 | `LLM/paths.md` | LLMs — machine-specific path resolution chain + COMBRIDGE001 |
 | `LLM/consuming.md` | LLMs — library-mode tables, stability tiers, attach patterns, multi-ProgID |
 | `LLM/scripting.md` | LLMs — per-plugin .csx recipe cookbook (all 5 shipped plugins) |
+| `LLM/extending.md` | LLMs — per-user `.csx` extension commands via `plugins/<Name>/commands/`; deferred-Shape-B rationale |
 | `LLM/authoring.md` | LLMs — prescriptive guide for building new plugins (4 discovery patterns, worked examples for AutoCAD/Inventor/Acrobat/Visio/BricsCAD) |
 | `LLM/troubleshooting.md` | LLMs — consolidated error → cause → fix catalog (build / load / attach / cast / script / COM runtime) |
 | `LLM/workflow.md` | LLMs — task router; bootstrap-second |
@@ -118,6 +120,7 @@ Primary entry: **`LLM/workflow.md`** has the full task router. Quick aliases:
 
 - "Add a plugin for [app]" → `LLM/authoring.md` (the prescriptive guide); then `LLM/build.md` § "csproj boilerplate"; if HintPath interop, also `LLM/paths.md`
 - "Write a .csx script for [app]" → `LLM/scripting.md` recipes + `LLM/plugins.md` § "<app> plugin"
+- "Add my own named command to a plugin (without forking it)" → `LLM/extending.md` (drop a `.csx` in `plugins/<Name>/commands/`)
 - "Fix any error" → `LLM/troubleshooting.md`
 - "Build error specifically" → `LLM/build.md` § "Pitfalls table"
 - "Plugin can't find interop DLLs / error COMBRIDGE001" → `LLM/paths.md`
