@@ -9,7 +9,7 @@ obj/
 /combridge.deps.json
 /combridge.runtimeconfig.json
 /ComBridge.Core.dll
-/Microsoft.CodeAnalysis.*.dll
+/Microsoft.CodeAnalysis*.dll
 
 # CopyToPluginsRoot deployment folder — rebuilt by every plugin csproj's
 # AfterTargets="Build" step. Source of truth lives under src/plugins/.
