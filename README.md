@@ -1,6 +1,8 @@
 # combridge
 
-Generic COM-automation host for Windows desktop apps, with a plugin model.
+Cross-platform desktop-app automation host with a plugin model. Windows
+plugins use COM; macOS plugins use AppleScript. One CLI contract
+(`combridge <app> <command>`) for both.
 Drop a plugin DLL into `plugins/<name>/` and the host gives you:
 
 - ROT attach (or new-instance create) for that app's COM server

@@ -51,6 +51,7 @@ internal static class Program
             }
 
             var noCreate = false;
+            _ = noCreate;   // referenced only inside #if WINDOWS below; silence CS0219 on net10.0
             string? sessionSelector = null;
             var filtered = new List<string>();
             for (int i = 0; i < args.Length; i++)
@@ -102,7 +103,7 @@ internal static class Program
 
             if (commandName == "list-sessions")
             {
-                var sessions = SessionPicker.Enumerate(plugin);
+                var sessions = plugin.FindSessions();
                 if (sessions.Count == 0)
                 {
                     Console.WriteLine($"(no running {plugin.Name} sessions in the ROT)");
@@ -150,14 +151,18 @@ internal static class Program
 
             // Attach (or create) the COM root before invoking the command.
             // Both the selector and the no-selector paths route through
-            // SessionPicker.Enumerate so the result is MRU-sorted (default is
-            // the most-recently-focused window). Activator.CreateInstance is
-            // the fallback only when no live session is discoverable AND the
-            // plugin opts into AllowCreateNew (and the user didn't pass --no-create).
+            // plugin.FindSessions() — which on Windows delegates to
+            // SessionPicker.Enumerate (MRU-sorted via Z-order), and on
+            // non-Windows platforms uses whatever native discovery the
+            // plugin overrode. SessionPicker.Resolve handles the selector
+            // grammar identically on all OSes (pure string matching, no
+            // Win32). Activator.CreateInstance is the fallback only when no
+            // live session is discoverable AND the plugin opts into
+            // AllowCreateNew (and the user didn't pass --no-create).
             object comRoot;
             try
             {
-                var sessions = SessionPicker.Enumerate(plugin);
+                var sessions = plugin.FindSessions();
 
                 if (sessionSelector is not null)
                 {
@@ -179,20 +184,34 @@ internal static class Program
                 else if (sessions.Count > 0)
                 {
                     // No --session: pick the MRU (most-recently-focused) session.
-                    // SessionPicker.Enumerate sorts MRU-first, so sessions[0] is correct.
+                    // FindSessions returns MRU-first on Windows (via SessionPicker /
+                    // Z-order); non-Windows plugins are expected to MRU-sort their
+                    // own output if the OS surfaces something equivalent.
                     comRoot = sessions[0].Root;
                 }
                 else
                 {
-                    // No live sessions at all → fall through to RotHelper.AttachOrCreate's
-                    // create-new-instance path (Activator + ProgID lookup). It does its
-                    // own attach attempt first (cheap, no-op when sessions is empty) and
-                    // then creates the instance if allowed.
+                    // No live sessions at all.
+#if WINDOWS
+                    // Windows fallback: RotHelper.AttachOrCreate tries one more attach
+                    // pass (cheap, no-op when sessions is empty) and then creates the
+                    // instance via Activator + ProgID if the plugin allows it.
                     comRoot = RotHelper.AttachOrCreate(
                         plugin.RotMonikerPatterns,
                         plugin.ProgIds,
                         transformer: plugin.TryExtractRoot,
                         createIfMissing: plugin.AllowCreateNew && !noCreate);
+#else
+                    // Non-Windows: no generic create-new-instance mechanism here.
+                    // A Mac/Linux plugin that wants auto-launch should do it inside
+                    // its FindSessions override (e.g. osascript "tell application X
+                    // to activate" then re-enumerate) so by the time we get here,
+                    // sessions is already non-empty for AllowCreateNew apps.
+                    Console.Error.WriteLine(
+                        $"ERROR: no running {plugin.Name} session and no auto-launch on this OS. " +
+                        $"Open {plugin.Name} manually and retry.");
+                    return 6;
+#endif
                 }
             }
             catch (Exception ex)

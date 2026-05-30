@@ -39,6 +39,7 @@ PLUGIN_LOAD_DIR: `<exeDir>/plugins/<Name>/<assembly>.dll`
 - COM attach uses two complementary paths: ROT-moniker walk via `RotMonikerPatterns` (multi-instance: SW `SolidWorks_PID_<pid>`, Office file-monikers `\.xlsx$`/`\.docx$`/`\.pptx$`) PLUS `oleaut32!GetActiveObject` fallback for class-moniker apps (Outlook). Plugin's `TryExtractRoot` hook ascends document RCWs to their parent Application. SessionPicker dedupes by PID and filters dead bindings (entries where the plugin's `DescribeInstance` returns BOTH null PID AND empty title — generic mechanism, applies to any COM host with transient sidecar processes, not just Office).
 - Shared-instance shims (Office 365 being the prototypical case) consolidate per-process state back into a single host even when a new process was spawned. Multi-instance code paths are correct and verified against shim-free apps (SolidWorks). For shimmed apps, multi-instance is supported in code but rare in live use. Full notes: `C:\personal_rag\claude_code\lesson_20260521_office365_shared_instance_quirk.md`.
 - **Three official consumption modes**: (1) call `combridge.exe` from a shell, (2) write a plugin DLL, (3) reference `ComBridge.Core.dll` as a library from a third-party tool. The library mode is for bespoke tools with their own UX or multi-ProgID workflows (SW + DocMgr). Stability tiers per type are listed at the top of `LLM/api.md`. Full guide: `LLM/consuming.md`.
+- **Cross-platform as of v0.3.0**: `ComBridge.Core` multi-targets `net10.0` + `net10.0-windows`. The CLI binary similarly multi-targets. Plugins declare `IComBridgePlugin.SupportedPlatforms`; `PluginLoader` silently filters by the current OS. Windows plugins use COM via `RotHelper`/`SessionPicker` (#if WINDOWS-gated). Mac/Linux plugins use platform-native automation (e.g. `osascript` for AppleScript on macOS). The CLI contract (`combridge <app> <command>`) is identical across OSes — a ScripTree `.scriptree` file works without per-OS branching as long as a matching plugin exists for the target OS. First shipped Mac plugin: `ComBridge.Plugins.Excel.Mac` (v0.3.0).
 - Roslyn scripting (`Microsoft.CodeAnalysis.CSharp.Scripting` 4.13.0) compiles user `.csx` against plugin globals + plugin-supplied references.
 - Scripts must be valid Roslyn-script C# (top-level statements; `var` declarations are hoisted but assignments are not — referencing a top-level `var` before its declaration runs returns `null` at runtime, not a compile error).
 - `using var x = ...` (C# 8 declaration form) is NOT supported in Roslyn scripting; use `using (var x = ...) { ... }` block form, or just `var x = ...` for one-shot scripts.
@@ -54,13 +55,19 @@ PLUGIN_LOAD_DIR: `<exeDir>/plugins/<Name>/<assembly>.dll`
 
 ## Defaults reference
 
-| Plugin | ProgIDs | AllowCreateNew | GlobalsType | Auto-imported namespaces |
-|---|---|---|---|---|
-| `solidworks` | `["SldWorks.Application"]` | `false` | `SwGlobals` | `SolidWorks.Interop.{sldworks, swconst, swcommands}` |
-| `excel` | `["Excel.Application"]` | `true` | `ExcelGlobals` | `Microsoft.Office.Interop.Excel` |
-| `word` | `["Word.Application"]` | `true` | `WdGlobals` | `Microsoft.Office.Interop.Word` |
-| `powerpoint` | `["PowerPoint.Application"]` | `true` | `PptGlobals` | `Microsoft.Office.Interop.PowerPoint` |
-| `outlook` | `["Outlook.Application"]` | `true` | `OlGlobals` | `Microsoft.Office.Interop.Outlook` |
+| Plugin | OS | ProgIDs / app name | AllowCreateNew | GlobalsType | Auto-imported namespaces |
+|---|---|---|---|---|---|
+| `solidworks` | Windows | `["SldWorks.Application"]` | `false` | `SwGlobals` | `SolidWorks.Interop.{sldworks, swconst, swcommands}` |
+| `excel` (Windows plugin) | Windows | `["Excel.Application"]` | `true` | `ExcelGlobals` | `Microsoft.Office.Interop.Excel` |
+| `word` | Windows | `["Word.Application"]` | `true` | `WdGlobals` | `Microsoft.Office.Interop.Word` |
+| `powerpoint` | Windows | `["PowerPoint.Application"]` | `true` | `PptGlobals` | `Microsoft.Office.Interop.PowerPoint` |
+| `outlook` | Windows | `["Outlook.Application"]` | `true` | `OlGlobals` | `Microsoft.Office.Interop.Outlook` |
+| `excel` (Mac plugin) | macOS | `["Microsoft Excel"]` (AppleScript app name) | `true` | `XlMacGlobals` | `ComBridge.Plugins.Excel.Mac` |
+
+Two plugins share `Name = "excel"` — the one targeting the current OS
+loads, the other is silently filtered out by `PluginLoader` per its
+`SupportedPlatforms`. So `combridge excel <command>` works the same on
+Windows and macOS (different backend, same CLI contract).
 
 ## When verifying SolidWorks API calls
 

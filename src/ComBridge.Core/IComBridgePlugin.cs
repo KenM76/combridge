@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.CodeAnalysis;
 
 namespace ComBridge.Core;
@@ -96,4 +97,55 @@ public interface IComBridgePlugin
     /// </para>
     /// </summary>
     object? TryExtractRoot(object monikerBound) => monikerBound;
+
+    /// <summary>
+    /// OS platforms this plugin supports. <see cref="PluginLoader"/> silently
+    /// skips plugins whose <see cref="SupportedPlatforms"/> doesn't include the
+    /// current OS (checked via <see cref="OperatingSystem"/>).
+    /// <para>
+    /// Default = Windows only — matches the behavior of every plugin written
+    /// against combridge v0.2.x, which all use Windows COM via
+    /// <see cref="RotHelper"/> and <c>oleaut32!GetActiveObject</c> and have no
+    /// non-Windows code path. New cross-platform plugins (e.g. AppleScript-based
+    /// Office plugins for macOS, UNO-based LibreOffice on Linux) override this
+    /// to declare their actual support: <c>new[] { OSPlatform.OSX }</c>,
+    /// <c>new[] { OSPlatform.OSX, OSPlatform.Linux }</c>, etc.
+    /// </para>
+    /// </summary>
+    IReadOnlyCollection<OSPlatform> SupportedPlatforms => new[] { OSPlatform.Windows };
+
+    /// <summary>
+    /// Discover all live instances of this plugin's target app on the current
+    /// OS, MRU-sorted (most-recently-focused first where applicable). Returns
+    /// the same shape as <see cref="SessionPicker.Enumerate"/> — a list of
+    /// <c>(Root, Info)</c> tuples ready for <c>list-sessions</c> display or
+    /// <c>--session</c> selector resolution.
+    /// <para>
+    /// <b>Default implementation</b> (Windows only, available when this Core
+    /// assembly is built for <c>net10.0-windows</c>): delegates to
+    /// <see cref="SessionPicker.Enumerate"/>, which combines ROT-moniker pattern
+    /// walking (using <see cref="RotMonikerPatterns"/>) with
+    /// <c>oleaut32!GetActiveObject</c> fallback (using <see cref="ProgIds"/>),
+    /// applies <see cref="TryExtractRoot"/>, dedupes by PID, drops dead bindings,
+    /// and sorts by desktop Z-order.
+    /// </para>
+    /// <para>
+    /// <b>Non-Windows plugins MUST override this</b> with platform-native
+    /// discovery (e.g. <c>osascript</c> + <c>tell application "System Events"</c>
+    /// on macOS, UNO bridge enumeration on Linux). The default throws
+    /// <see cref="PlatformNotSupportedException"/> on any non-Windows build,
+    /// making the "you forgot to override" case loud at runtime.
+    /// </para>
+    /// </summary>
+    List<(object Root, SessionInfo Info)> FindSessions()
+    {
+#if WINDOWS
+        return SessionPicker.Enumerate(this);
+#else
+        throw new PlatformNotSupportedException(
+            $"Plugin '{Name}' didn't override FindSessions(), and the default " +
+            $"Windows-COM implementation isn't available on this OS. " +
+            $"Non-Windows plugins must implement their own discovery.");
+#endif
+    }
 }

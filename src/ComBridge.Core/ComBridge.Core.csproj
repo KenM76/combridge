@@ -3,6 +3,13 @@
     <OutputType>Library</OutputType>
     <RootNamespace>ComBridge.Core</RootNamespace>
     <AssemblyName>ComBridge.Core</AssemblyName>
+    <!-- Multi-target: platform-neutral types compile for both TFMs;
+         Windows-only types (RotHelper, SessionPicker) are gated by `#if WINDOWS`
+         and only land in the net10.0-windows build. This lets non-Windows
+         plugins reference Core without pulling in Win32 P/Invoke types they
+         can't use anyway. -->
+    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+    <TargetFramework></TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.13.0" />

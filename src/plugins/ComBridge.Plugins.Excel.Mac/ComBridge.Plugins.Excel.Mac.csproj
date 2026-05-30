@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ComBridge.Plugins.Excel.Mac</RootNamespace>
+    <AssemblyName>ComBridge.Plugins.Excel.Mac</AssemblyName>
+    <!-- net10.0 (NOT net10.0-windows): this plugin uses osascript via
+         Process.Start, no Win32 / no COM. Compiles on any platform; runs
+         only on macOS (PluginLoader's SupportedPlatforms filter skips it
+         on Windows/Linux). -->
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ComBridge.Core\ComBridge.Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- Same CopyToPluginsRoot convention as the Windows plugins, so a single
+       build produces the cross-platform deploy layout that install_combridge
+       picks up. On a Mac build, only the .Mac plugins will be relevant; on
+       Windows they'd still be copied but PluginLoader skips them at load
+       time per SupportedPlatforms. -->
+  <Target Name="CopyToPluginsRoot" AfterTargets="Build">
+    <PropertyGroup>
+      <PluginsRoot>$(MSBuildThisFileDirectory)..\..\..\plugins\Excel.Mac</PluginsRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <PluginDeploy Include="$(OutputPath)*.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(PluginsRoot)" />
+    <Copy SourceFiles="@(PluginDeploy)" DestinationFolder="$(PluginsRoot)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

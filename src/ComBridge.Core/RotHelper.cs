@@ -1,3 +1,8 @@
+// Windows-only file: COM Running Object Table + oleaut32!GetActiveObject
+// reach via Win32 P/Invokes that exist only on net10.0-windows. Gated by
+// `#if WINDOWS` so a net10.0 build of Core (used by Mac/Linux plugins via
+// multi-targeting) compiles cleanly without these types.
+#if WINDOWS
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
@@ -163,3 +168,5 @@ public static class RotHelper
         return AttachOrCreate(patterns, ids, createIfMissing);
     }
 }
+// close the #if WINDOWS opened at top of file
+#endif

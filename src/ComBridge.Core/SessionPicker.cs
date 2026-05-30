@@ -1,4 +1,12 @@
+// SessionPicker hybrid: the selector-resolution grammar (Resolve) is pure
+// string matching and works cross-platform. The discovery + Z-order ranking
+// helpers use Win32 P/Invokes and only exist on net10.0-windows (gated by
+// `#if WINDOWS` per-method below). Non-Windows plugins discover sessions
+// themselves via IComBridgePlugin.FindSessions but still use Resolve to
+// honor the same --session selector grammar.
+#if WINDOWS
 using System.Runtime.InteropServices;
+#endif
 
 namespace ComBridge.Core;
 
@@ -8,6 +16,7 @@ namespace ComBridge.Core;
 /// </summary>
 public static class SessionPicker
 {
+#if WINDOWS
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 
@@ -18,7 +27,9 @@ public static class SessionPicker
     private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
     private const uint GW_HWNDNEXT = 2;
+#endif
 
+#if WINDOWS
     /// <summary>Convert an HWND to its owning process ID via Win32, or null on failure.</summary>
     public static int? PidFromHwnd(IntPtr hwnd)
     {
@@ -26,6 +37,7 @@ public static class SessionPicker
         if (GetWindowThreadProcessId(hwnd, out var pid) == 0) return null;
         return (int)pid;
     }
+#endif
 
     /// <summary>
     /// Rank the given PIDs by their top-level windows' position in the
@@ -40,6 +52,7 @@ public static class SessionPicker
     /// from top down. The terminal's PID won't be in <paramref name="pids"/>,
     /// so B gets the lowest rank and wins as "most recently used."
     /// </remarks>
+#if WINDOWS
     private static Dictionary<int, int> RankByZOrder(IEnumerable<int> pids)
     {
         var wanted = new HashSet<int>(pids);
@@ -115,6 +128,9 @@ public static class SessionPicker
     /// </remarks>
     public static List<(object Root, SessionInfo Info)> Enumerate(IComBridgePlugin plugin)
     {
+        // (Body wrapped between RankByZOrder #if WINDOWS above and the closing #endif
+        // immediately preceding Resolve below — keeps PidFromHwnd / RankByZOrder /
+        // Enumerate Windows-only while Resolve stays cross-platform.)
         // Two discovery paths, combined and PID-deduped:
         //   1. ROT-moniker pattern walk, then plugin.TryExtractRoot to ascend from
         //      per-doc monikers (Excel .xlsx) to the parent application. Identity for
@@ -214,6 +230,13 @@ public static class SessionPicker
     ///         title (or the full description string).</item>
     /// </list>
     /// </remarks>
+#endif
+
+    /// <summary>
+    /// Cross-platform selector grammar (pure string matching, no Win32).
+    /// Available on all TFMs so Mac/Linux plugins can honor the same
+    /// <c>--session</c> selector forms as Windows plugins.
+    /// </summary>
     public static (object Root, SessionInfo Info)? Resolve(
         List<(object Root, SessionInfo Info)> sessions, string? selector)
     {

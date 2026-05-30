@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 using ComBridge.Core.Commands;
 
@@ -76,7 +77,21 @@ public static class PluginLoader
                 {
                     if (!typeof(IComBridgePlugin).IsAssignableFrom(t)) continue;
                     if (t.IsAbstract || t.IsInterface) continue;
-                    if (Activator.CreateInstance(t) is IComBridgePlugin p) found.Add(p);
+                    if (Activator.CreateInstance(t) is IComBridgePlugin p)
+                    {
+                        // Filter by current OS: skip plugins whose SupportedPlatforms
+                        // doesn't include this OS. Lets Windows-only and Mac-only
+                        // plugins coexist in the same plugins/ tree across machines
+                        // sharing the same combridge bundle (e.g. a Dropbox-synced
+                        // ScripTree install on both Windows + Mac).
+                        if (!IsSupportedOnCurrentOS(p))
+                        {
+                            // Silent skip — list-plugins would otherwise show
+                            // plugins the user can't actually invoke and confuse them.
+                            continue;
+                        }
+                        found.Add(p);
+                    }
                 }
             }
             catch (Exception ex)
@@ -85,6 +100,21 @@ public static class PluginLoader
             }
         }
         return found;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="plugin"/>'s <see cref="IComBridgePlugin.SupportedPlatforms"/>
+    /// includes the OS this process is running on. Used by <see cref="LoadAll"/>
+    /// to skip incompatible plugins silently rather than letting them load and
+    /// then fail mysteriously on first use.
+    /// </summary>
+    public static bool IsSupportedOnCurrentOS(IComBridgePlugin plugin)
+    {
+        foreach (var platform in plugin.SupportedPlatforms)
+        {
+            if (RuntimeInformation.IsOSPlatform(platform)) return true;
+        }
+        return false;
     }
 
     /// <summary>

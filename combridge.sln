@@ -14,6 +14,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.PowerPoin
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.Outlook", "src\plugins\ComBridge.Plugins.Outlook\ComBridge.Plugins.Outlook.csproj", "{A0000007-0000-0000-0000-000000000007}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.Excel.Mac", "src\plugins\ComBridge.Plugins.Excel.Mac\ComBridge.Plugins.Excel.Mac.csproj", "{A0000008-0000-0000-0000-000000000008}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,5 +50,9 @@ Global
 		{A0000007-0000-0000-0000-000000000007}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A0000007-0000-0000-0000-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A0000007-0000-0000-0000-000000000007}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0000008-0000-0000-0000-000000000008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0000008-0000-0000-0000-000000000008}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0000008-0000-0000-0000-000000000008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0000008-0000-0000-0000-000000000008}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

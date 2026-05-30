@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — cross-platform foundation (Windows + macOS)
+
+### Added
+- **Multi-targeted `ComBridge.Core`** — now builds for both `net10.0` and
+  `net10.0-windows`. Windows-only code (`RotHelper`, `SessionPicker`
+  Z-order/HWND helpers) is gated by `#if WINDOWS` per-method, so non-Windows
+  plugins can reference Core without pulling in Win32 types.
+- **`IComBridgePlugin.SupportedPlatforms`** — declares which OSes the
+  plugin works on. `PluginLoader` silently skips plugins whose
+  `SupportedPlatforms` doesn't include the current OS. Default = Windows
+  only (matches v0.2.x plugin behavior; existing plugins keep working
+  unchanged).
+- **`IComBridgePlugin.FindSessions()`** — new default-interface method.
+  Default impl on Windows delegates to `SessionPicker.Enumerate`
+  (MRU-sorted via desktop Z-order). Non-Windows plugins MUST override
+  with platform-native discovery (e.g. AppleScript on macOS).
+- **`PluginLoader.IsSupportedOnCurrentOS(plugin)`** — public helper for
+  checking platform support.
+- **Multi-targeted `ComBridge.Cli`** — produces both a Windows binary
+  (with full COM/ROT support) and a `net10.0` binary (for macOS/Linux
+  with platform-neutral plugins only). Command dispatcher now routes
+  all session discovery through `plugin.FindSessions()` so the CLI is
+  OS-agnostic; `SessionPicker.Resolve` (cross-platform pure-string
+  selector grammar) stays available on all OSes.
+- **`ComBridge.Plugins.Excel.Mac` plugin** — first cross-platform plugin.
+  Targets `net10.0`. Drives Microsoft Excel for Mac via `osascript`
+  (AppleScript). Same CLI contract as the Windows Excel plugin
+  (`combridge excel info`, `dump-sheet`, etc.) so a ScripTree `.scriptree`
+  file targeting Excel works on both OSes without per-OS branching.
+
+### Changed
+- `SessionPicker` split into Windows-only methods (`PidFromHwnd`,
+  `RankByZOrder`, `Enumerate`) and a cross-platform method (`Resolve`).
+- `Program.cs` no-session-available fallback gated by `#if WINDOWS`;
+  non-Windows builds emit a clear "no running session, open it manually"
+  error rather than calling the Win32-only `RotHelper.AttachOrCreate`.
+
+### Architecture
+- Plugins are now categorized by platform:
+  - **Windows-only**: `ComBridge.Plugins.{SolidWorks,Excel,Word,PowerPoint,Outlook}` (use COM, target `net10.0-windows`)
+  - **macOS-only**: `ComBridge.Plugins.Excel.Mac` (uses `osascript`, targets `net10.0`)
+  - Future: `Word.Mac`, `PowerPoint.Mac`, `LibreOffice` (any OS), etc.
+- ScripTree files invoking `combridge <app> <command>` work uniformly
+  on any OS where a plugin for that app exists — the CLI contract IS
+  the cross-platform abstraction.
+
+### Migration
+- Existing Windows plugins keep working with zero source changes. They
+  inherit `SupportedPlatforms => new[] { OSPlatform.Windows }` from the
+  interface default.
+- The `combridge.exe` binary for Windows is unchanged in behavior; all
+  v0.2.0 commands, selectors, and scripts work identically.
+
 ## [0.2.0] — per-plugin `.csx` command extensions
 
 ### Added
