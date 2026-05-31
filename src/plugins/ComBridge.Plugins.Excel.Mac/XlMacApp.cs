@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using ComBridge.Mac.Common;
+
 namespace ComBridge.Plugins.Excel.Mac;
 
 /// <summary>

@@ -63,11 +63,16 @@ PLUGIN_LOAD_DIR: `<exeDir>/plugins/<Name>/<assembly>.dll`
 | `powerpoint` | Windows | `["PowerPoint.Application"]` | `true` | `PptGlobals` | `Microsoft.Office.Interop.PowerPoint` |
 | `outlook` | Windows | `["Outlook.Application"]` | `true` | `OlGlobals` | `Microsoft.Office.Interop.Outlook` |
 | `excel` (Mac plugin) | macOS | `["Microsoft Excel"]` (AppleScript app name) | `true` | `XlMacGlobals` | `ComBridge.Plugins.Excel.Mac` |
+| `word` (Mac plugin) | macOS | `["Microsoft Word"]` | `true` | `WdMacGlobals` | `ComBridge.Plugins.Word.Mac` |
+| `powerpoint` (Mac plugin) | macOS | `["Microsoft PowerPoint"]` | `true` | `PptMacGlobals` | `ComBridge.Plugins.PowerPoint.Mac` |
+| `outlook` (Mac plugin) | macOS | `["Microsoft Outlook"]` | `true` | `OlMacGlobals` | `ComBridge.Plugins.Outlook.Mac` |
 
-Two plugins share `Name = "excel"` — the one targeting the current OS
-loads, the other is silently filtered out by `PluginLoader` per its
-`SupportedPlatforms`. So `combridge excel <command>` works the same on
-Windows and macOS (different backend, same CLI contract).
+Pairs share their CLI `Name` (`"excel"`, `"word"`, `"powerpoint"`,
+`"outlook"`) — the one targeting the current OS loads, the other is
+silently filtered out by `PluginLoader` per its `SupportedPlatforms`.
+`combridge <app> <command>` works the same on Windows and macOS
+(different backend, same CLI contract). SolidWorks has no Mac plugin —
+SOLIDWORKS doesn't exist on macOS.
 
 ## When verifying SolidWorks API calls
 

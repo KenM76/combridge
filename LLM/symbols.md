@@ -16,6 +16,22 @@ All paths relative to the repo root (the directory containing `combridge.sln`).
 | `class Commands.RunScriptCommand` | `src/ComBridge.Core/Commands/RunScriptCommand.cs` |
 | `class Commands.ScriptedCommand` | `src/ComBridge.Core/Commands/ScriptedCommand.cs` (per-user `.csx` extensions, "Shape A") |
 
+## Mac shared library
+
+| Symbol | File |
+|---|---|
+| `static class Mac.Common.Osascript` | `src/ComBridge.Mac.Common/Osascript.cs` |
+| `class Mac.Common.OsascriptException` | `src/ComBridge.Mac.Common/Osascript.cs` |
+
+## Mac plugin types
+
+| Symbol | File |
+|---|---|
+| `class ExcelMacPlugin`, `XlMacApp`, `XlMacGlobals` | `src/plugins/ComBridge.Plugins.Excel.Mac/*.cs` |
+| `class WordMacPlugin`, `WdMacApp`, `WdMacGlobals` | `src/plugins/ComBridge.Plugins.Word.Mac/*.cs` |
+| `class PowerPointMacPlugin`, `PptMacApp`, `PptMacGlobals` | `src/plugins/ComBridge.Plugins.PowerPoint.Mac/*.cs` |
+| `class OutlookMacPlugin`, `OlMacApp`, `OlMacGlobals` | `src/plugins/ComBridge.Plugins.Outlook.Mac/*.cs` |
+
 ## Internal types
 
 | Symbol | File |
@@ -76,6 +92,8 @@ All paths relative to the repo root (the directory containing `combridge.sln`).
 
 ## Plugin output deployment paths
 
+### Windows plugins (target `net10.0-windows`)
+
 | Source plugin | Deploys to |
 |---|---|
 | `src/plugins/ComBridge.Plugins.SolidWorks/` | `plugins/SolidWorks/` |
@@ -83,6 +101,21 @@ All paths relative to the repo root (the directory containing `combridge.sln`).
 | `src/plugins/ComBridge.Plugins.Word/` | `plugins/Word/` |
 | `src/plugins/ComBridge.Plugins.PowerPoint/` | `plugins/PowerPoint/` |
 | `src/plugins/ComBridge.Plugins.Outlook/` | `plugins/Outlook/` |
+
+### Mac plugins (target `net10.0`)
+
+| Source plugin | Deploys to |
+|---|---|
+| `src/plugins/ComBridge.Plugins.Excel.Mac/` | `plugins/Excel.Mac/` |
+| `src/plugins/ComBridge.Plugins.Word.Mac/` | `plugins/Word.Mac/` |
+| `src/plugins/ComBridge.Plugins.PowerPoint.Mac/` | `plugins/PowerPoint.Mac/` |
+| `src/plugins/ComBridge.Plugins.Outlook.Mac/` | `plugins/Outlook.Mac/` |
+
+### Shared (referenced by all Mac plugins, deployed alongside them via transitive copy)
+
+| Source | Purpose |
+|---|---|
+| `src/ComBridge.Mac.Common/` | `Osascript` helper — single subprocess-shell-out wrapper used by all Mac plugins |
 
 ## Examples
 

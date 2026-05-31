@@ -252,7 +252,7 @@ the first match is correct). Title from `app.ActiveExplorer().CurrentFolder.Name
 |---|---|---|
 | `info` | none | Prints version, current user name, Inbox item count, all stores (mail accounts), active explorer caption + current folder |
 
-### Outlook scripting hints
+### Outlook scripting hints (Windows MAPI)
 
 The `NameSpace` is where everything lives:
 
@@ -332,3 +332,82 @@ extract for most apps — see the HWND properties table below.
 | Inventor | `invApp.MainFrameHWND` returns `int` | (untested in this repo) |
 
 In all cases pass to `SessionPicker.PidFromHwnd((IntPtr)hwnd)` which calls `user32!GetWindowThreadProcessId`.
+
+# macOS plugins (Excel.Mac / Word.Mac / PowerPoint.Mac / Outlook.Mac)
+
+Four AppleScript-backed Office plugins ship alongside the Windows ones,
+sharing CLI names so `combridge <app> <command>` works the same on
+Windows and macOS. `PluginLoader` filters by current OS via
+`SupportedPlatforms`, so only one "excel" / "word" / "powerpoint" /
+"outlook" plugin loads per machine.
+
+## Shape they all share
+
+- `TargetFramework`: `net10.0` (NOT `net10.0-windows`)
+- `SupportedPlatforms`: `[OSPlatform.OSX]`
+- Reference `ComBridge.Core` AND `ComBridge.Mac.Common` (shared
+  `Osascript` helper — wraps `Process.Start("osascript", ...)`)
+- Override `FindSessions()` with native discovery via
+  `tell application "System Events" to (name of processes) contains "..."`
+- `DescribeInstance` is stubbed (returns null/null) — `FindSessions`
+  populates the SessionInfo directly without going through SessionPicker
+- `CreateGlobals(comRoot)` ignores the `comRoot` (sentinel `new object()`
+  from `FindSessions`) and constructs a fresh wrapper
+
+## Per-plugin specifics
+
+| Plugin | AppleScript app name | Globals | Built-in commands |
+|---|---|---|---|
+| `excel` (Mac) | `"Microsoft Excel"` | `xlApp` (`XlMacApp`) | `info`, `dump-sheet` |
+| `word` (Mac) | `"Microsoft Word"` | `wdApp` (`WdMacApp`) | `info`, `extract-text`, `doc-stats` |
+| `powerpoint` (Mac) | `"Microsoft PowerPoint"` | `pptApp` (`PptMacApp`) | `info`, `list-slides` |
+| `outlook` (Mac) | `"Microsoft Outlook"` | `olApp` (`OlMacApp`) | `info`, `list-accounts` |
+
+## What's different vs the Windows plugins (script-author level)
+
+- **Globals types differ.** Windows `xlApp` is `Microsoft.Office.Interop.Excel._Application`
+  with ~3000 members. Mac `xlApp` is `XlMacApp` with ~10 high-level
+  helpers (Version, ActiveWorkbookName, GetCellValue, DumpUsedRange,
+  etc.). A .csx using Windows-specific idioms (`xlApp.Workbooks[1].Worksheets[2].Cells[3,4].Value`)
+  won't compile against the Mac plugin's globals.
+- **Per-cell access is slow** — each call shells out to osascript
+  (~5-20ms cold). Bulk operations (`DumpUsedRange`) batch into one
+  invocation; use those instead of looping individual cells.
+- **No "multi-instance" Office.** Mac Office is single-instance per
+  user. `list-sessions` always returns 0 or 1 entries.
+- **Outlook for Mac has a thinner dictionary** than Windows MAPI. No
+  Stores collection, no Restrict() with Jet syntax, limited message
+  body access. The plugin exposes accounts + inbox counts; richer
+  scripting requires falling back to direct osascript.
+
+## Implementation notes for future Mac plugin authors
+
+- **`Microsoft Excel` vs `Excel`**: AppleScript app names use the full
+  Office-branded name (`"Microsoft Excel"`, `"Microsoft Word"`, etc.),
+  NOT just the bare app name. Get it wrong and AppleScript throws
+  "Application isn't running" even when it is.
+- **App-running probe**: `tell application "System Events" to (name of
+  processes) contains "..."` returns `true`/`false`. Use `Osascript.TryRun`
+  to handle failures silently.
+- **PID extraction**: `tell application "System Events" to unix id of
+  (first process whose name is "...")` returns the PID as a string;
+  parse to int.
+- **Active document title**: each Office app has its own AppleScript
+  vocabulary (`active workbook`, `active document`, `active presentation`).
+  See per-plugin source for the right one.
+- **AppleScript string-list coercion**: `name of every X as text`
+  returns a comma-space-separated list. Split on `", "` to recover
+  individual items (with a small risk of false splits if a name itself
+  contains `", "`).
+- **Batching multi-call AppleScript**: when iterating something, wrap
+  the loop inside one big AppleScript that emits a delimiter-joined
+  result. A single osascript invocation is ~5-20ms cold; 100 cell-by-cell
+  invocations is 0.5-2s.
+
+## Known limitation — "New Outlook for Mac"
+
+Microsoft's Catalyst-based "New Outlook for Mac" (rolling out 2024+)
+further restricts AppleScript automation. This plugin targets the
+classic Outlook for Mac. Migration to a thin REST wrapper over
+Microsoft Graph may be necessary in a future release if Microsoft
+removes AppleScript support entirely.

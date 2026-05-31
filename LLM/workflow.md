@@ -56,7 +56,18 @@ User wants a Roslyn script that uses an existing plugin's globals.
    - `dynamic` is supported (default refs include Microsoft.CSharp)
    - Top-level statements only — no `class Program { static void Main }` wrapper
 
-### "Add a plugin for [app]"
+### "Add a plugin for [app] on macOS"
+
+User wants a Mac-side plugin for an AppleScript-driven app
+(Word/PowerPoint/Outlook already shipped; new apps like Photoshop,
+Acrobat, OmniGraffle would follow this).
+
+1. **`LLM/authoring.md` § "macOS plugin pattern (AppleScript via osascript)"** — the prescriptive Mac template
+2. Copy `src/plugins/ComBridge.Plugins.Excel.Mac/` as the starting point (or Word.Mac for a simpler example)
+3. Swap the AppleScript application name, wrapper class members, command set
+4. Reference `ComBridge.Mac.Common` for the shared `Osascript` helper
+
+### "Add a plugin for [app]" (Windows)
 
 User wants combridge to support a new COM-automation app.
 

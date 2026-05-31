@@ -1,0 +1,107 @@
+name: Cross-platform build
+
+# Validates the multi-target architecture: Core, CLI, and Mac plugins MUST
+# build on macOS; Core, CLI, and Mac plugins SHOULD build on Windows
+# (Windows plugins need installed apps that GitHub-hosted runners don't have,
+# so we skip them — they're verified manually on developer machines).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  macos:
+    # Validates the cross-platform parts: ComBridge.Core (net10.0 TFM),
+    # ComBridge.Cli (net10.0 TFM), ComBridge.Mac.Common, and the four Mac
+    # plugins. This is the build that proves the architecture isn't
+    # Windows-only.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Core (net10.0)
+        run: dotnet build src/ComBridge.Core/ComBridge.Core.csproj -c Release -f net10.0
+
+      - name: Build CLI (net10.0)
+        run: dotnet build src/ComBridge.Cli/ComBridge.Cli.csproj -c Release -f net10.0
+
+      - name: Build Mac.Common
+        run: dotnet build src/ComBridge.Mac.Common/ComBridge.Mac.Common.csproj -c Release
+
+      - name: Build Mac plugins
+        run: |
+          dotnet build src/plugins/ComBridge.Plugins.Excel.Mac/ComBridge.Plugins.Excel.Mac.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.Word.Mac/ComBridge.Plugins.Word.Mac.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.PowerPoint.Mac/ComBridge.Plugins.PowerPoint.Mac.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.Outlook.Mac/ComBridge.Plugins.Outlook.Mac.csproj -c Release
+
+      - name: Smoke-test combridge binary (no apps running)
+        run: |
+          BIN=src/ComBridge.Cli/bin/Release/net10.0
+          # The Mac plugins were deployed by their CopyToPluginsRoot targets to ./plugins/
+          # — but the binary expects them next to itself. Stage them there.
+          mkdir -p "$BIN/plugins"
+          cp -R plugins/Excel.Mac plugins/Word.Mac plugins/PowerPoint.Mac plugins/Outlook.Mac "$BIN/plugins/"
+          chmod +x "$BIN/combridge"
+          "$BIN/combridge" list-plugins
+          # Should list excel, outlook, powerpoint, word — all 4 Mac plugins.
+          # Windows plugins compiled too but their net10.0-windows DLLs aren't
+          # built on macOS, so plugins/Excel/ etc. don't exist here.
+
+  windows:
+    # Validates that the Windows side still builds end-to-end. The Windows
+    # plugins need Office/SOLIDWORKS installed to fully build (Common.Paths.props
+    # validation will fail for SolidWorks/Word/PowerPoint/Outlook on a vanilla
+    # runner). We build just Core + CLI + Excel (NuGet PIA) + the Mac plugins
+    # (which work cross-platform).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Core (both TFMs)
+        run: dotnet build src/ComBridge.Core/ComBridge.Core.csproj -c Release
+
+      - name: Build CLI (both TFMs)
+        run: dotnet build src/ComBridge.Cli/ComBridge.Cli.csproj -c Release
+
+      - name: Build Mac.Common + Mac plugins (cross-platform — should build on Windows too)
+        run: |
+          dotnet build src/ComBridge.Mac.Common/ComBridge.Mac.Common.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.Excel.Mac/ComBridge.Plugins.Excel.Mac.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.Word.Mac/ComBridge.Plugins.Word.Mac.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.PowerPoint.Mac/ComBridge.Plugins.PowerPoint.Mac.csproj -c Release
+          dotnet build src/plugins/ComBridge.Plugins.Outlook.Mac/ComBridge.Plugins.Outlook.Mac.csproj -c Release
+
+      - name: Smoke-test combridge.exe (list-plugins on a runner with no Office/SW)
+        run: |
+          $bin = "src/ComBridge.Cli/bin/Release/net10.0-windows"
+          # Stage the Mac plugins so PluginLoader can attempt to load them
+          # (they'll be filtered out by SupportedPlatforms — verifies the filter works)
+          New-Item -ItemType Directory -Force "$bin/plugins" | Out-Null
+          Copy-Item -Recurse plugins/Excel.Mac, plugins/Word.Mac, plugins/PowerPoint.Mac, plugins/Outlook.Mac "$bin/plugins/" -ErrorAction SilentlyContinue
+          & "$bin/combridge.exe" list-plugins
+          # Expected: empty list (no Windows plugin DLLs without their COM apps)
+          # OR: Excel.Mac etc. filtered out (showing the filter works correctly)
+        shell: pwsh
+
+  # Note on coverage: the SolidWorks, Excel (Windows), Word (Windows),
+  # PowerPoint (Windows), and Outlook (Windows) plugins all need their target
+  # apps installed (or in SolidWorks' case the API SDK installed) — neither is
+  # available on GitHub-hosted runners. Their builds are verified manually on
+  # developer machines per the LLM/build.md "Build prerequisites per plugin"
+  # section. A self-hosted runner with Office/SOLIDWORKS would close that gap
+  # if someone wants to pay for the licenses and machine.

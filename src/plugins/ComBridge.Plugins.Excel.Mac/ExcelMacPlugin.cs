@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using ComBridge.Core;
+using ComBridge.Mac.Common;
 using Microsoft.CodeAnalysis;
 
 namespace ComBridge.Plugins.Excel.Mac;

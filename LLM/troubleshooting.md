@@ -419,6 +419,100 @@ for (int c = 0; c < 5; c++)
 xlSheet.Range["A1", "E1000"].Value = arr;   // one COM call
 ```
 
+## macOS / AppleScript issues (Mac plugins)
+
+### `osascript` returns "Application isn't running" but the app IS running
+
+**Cause.** AppleScript application name mismatch. Office apps use the
+full branded name (`"Microsoft Excel"`, `"Microsoft Word"`, `"Microsoft
+PowerPoint"`, `"Microsoft Outlook"`) — NOT the short name (`"Excel"`,
+`"Word"`).
+
+**Fix.** Check the plugin's `ProgIds[0]` against the actual AppleScript
+app name. Run `osascript -e 'name of every process'` to see what System
+Events calls the running app.
+
+### AppleScript permission prompts block the script
+
+**Cause.** macOS's privacy framework (TCC) requires explicit user consent
+the first time an app sends AppleEvents to another app. The user sees a
+"<combridge> would like to control <app>" dialog; if they decline (or
+combridge is run from a context that can't surface the dialog like an
+SSH session), every subsequent call returns error -1743 "Not authorized
+to send Apple events."
+
+**Fix.** First-run requires interactive consent. Have the user run
+`combridge <app> info -` from Terminal, click "OK" on the prompt. After
+that the consent persists. To inspect/reset: System Settings → Privacy &
+Security → Automation.
+
+### `osascript` is slow inside a tight loop
+
+**Cause.** Each `Osascript.Run` shell-out is a fresh subprocess
+(~5-20ms cold). 1000 per-cell calls = 5-20 seconds.
+
+**Fix.** Batch into one AppleScript that loops internally and emits a
+delimiter-joined result. See `XlMacApp.DumpUsedRange` for the pattern
+— one osascript invocation for the entire used range. Or:
+
+```applescript
+-- BAD: 1000 shell-outs
+repeat with i from 1 to 1000
+    do something with cell i
+end repeat
+
+-- GOOD: 1 shell-out
+tell application "X"
+    set out to {}
+    repeat with i from 1 to 1000
+        set end of out to (something about cell i) as text
+    end repeat
+    set AppleScript's text item delimiters to linefeed
+    return out as text
+end tell
+```
+
+### "New Outlook for Mac" rejects most AppleScript
+
+**Cause.** Microsoft's Catalyst-based New Outlook for Mac (rolling out
+2024+) deliberately removed most of the AppleScript dictionary. The
+`Outlook.Mac` plugin targets classic Outlook for Mac.
+
+**Fix.** Switch the user back to classic Outlook (Outlook → "Get Help
+Improving Outlook" toggle, or Outlook → "New Outlook" toggle off). Or
+wait for a Microsoft Graph REST-based plugin (not yet in this repo).
+
+### `Osascript.IsAvailable()` returns false on macOS
+
+**Cause.** `osascript` not on PATH. Very rare — it's a core macOS
+binary at `/usr/bin/osascript` and PATH typically includes `/usr/bin`.
+
+**Fix.** Verify `which osascript` returns `/usr/bin/osascript`. If
+not, fix PATH in the shell that's launching combridge.
+
+### Mac plugin's `FindSessions` always returns empty
+
+**Cause.** Usually one of:
+- App not running
+- AppleScript name typo (see "Application isn't running" above)
+- TCC permission denied (see permission prompts above)
+- The plugin didn't override FindSessions — default Windows impl throws
+  PlatformNotSupportedException on macOS
+
+**Fix.** Verify the override is in place. Add a `Console.Error.WriteLine`
+debug at the top of FindSessions to confirm it's being called.
+
+### Mac plugin doesn't load at all (`list-plugins` doesn't show it)
+
+**Cause.** `SupportedPlatforms` includes `OSPlatform.Windows` only (the
+interface default). PluginLoader's `IsSupportedOnCurrentOS` returns
+false on macOS, silently skipping the plugin.
+
+**Fix.** Add to the plugin class:
+```csharp
+public IReadOnlyCollection<OSPlatform> SupportedPlatforms => new[] { OSPlatform.OSX };
+```
+
 ## "I don't know which discovery pattern an app uses"
 
 Use the ROT diagnostic in the "no running sessions" section above. Look

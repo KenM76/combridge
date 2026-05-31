@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — full Mac Office coverage + CI + comprehensive docs sweep
+
+### Added
+- **`ComBridge.Mac.Common`** library — shared `Osascript` helper used by
+  all Mac plugins. Extracted from Excel.Mac so Word.Mac / PowerPoint.Mac /
+  Outlook.Mac aren't triplicating the same subprocess plumbing.
+- **`ComBridge.Plugins.Word.Mac`** — AppleScript-backed Word for Mac
+  plugin. Commands: `info`, `extract-text`, `doc-stats`. Same CLI name
+  (`word`) as the Windows Word plugin.
+- **`ComBridge.Plugins.PowerPoint.Mac`** — AppleScript-backed PowerPoint
+  for Mac plugin. Commands: `info`, `list-slides`. Same CLI name
+  (`powerpoint`).
+- **`ComBridge.Plugins.Outlook.Mac`** — AppleScript-backed Outlook for
+  Mac plugin (with documented limitations vs the Windows MAPI plugin —
+  no Stores collection, thinner dictionary, "New Outlook for Mac"
+  restrictions noted). Commands: `info`, `list-accounts`.
+- **GitHub Actions CI** (`.github/workflows/build.yml`) — two jobs:
+  - macOS runner: builds Core, CLI, Mac.Common, all 4 Mac plugins,
+    smoke-tests `combridge list-plugins`.
+  - Windows runner: builds Core (both TFMs), CLI (both TFMs), Mac
+    plugins (proves they compile cross-platform). Windows plugins
+    needing installed Office/SOLIDWORKS are NOT built (no app
+    available on hosted runners; documented in workflow comments).
+- **LLM docs full cross-platform sweep**:
+  - `LLM/plugins.md` § "macOS plugins" with per-plugin specifics, AppleScript app names, what differs vs Windows, implementation notes
+  - `LLM/authoring.md` § "macOS plugin pattern" — prescriptive template + reference layout + drop-in skeleton + other AppleScript-friendly apps
+  - `LLM/troubleshooting.md` § "macOS / AppleScript issues" — TCC permission prompts, `osascript` slowness in loops, "Application isn't running" cause, New Outlook for Mac caveats, plugin-doesn't-load diagnostics
+  - `LLM/build.md` — Mac build commands + per-OS plugin availability table
+  - `LLM/workflow.md` task router — "Add a plugin for macOS" entry
+  - `LLM/symbols.md` — Mac plugin deployment paths + Mac.Common library + symbol index
+  - `LLM/README.md` defaults table — all 4 Mac plugins listed
+
+### Architecture
+- Plugin tree now categorized by platform:
+  - 5 Windows plugins (SW + Office)
+  - 4 Mac plugins (Office only — SolidWorks doesn't exist on macOS)
+  - 1 shared library (Mac.Common)
+- A single combridge bundle ships all 9 plugin folders side-by-side; the
+  OS-supported ones load per machine.
+
+### Migration
+- No source changes needed for existing plugins.
+- Existing v0.3.0 release tag remains valid; v0.3.1 adds Mac coverage
+  + CI without breaking anything.
+
 ## [0.3.0] — cross-platform foundation (Windows + macOS)
 
 ### Added

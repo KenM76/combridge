@@ -364,6 +364,130 @@ Console.WriteLine($"version: {d.Version}");
 
 If any of these fail, the plugin isn't done. See troubleshooting.
 
+## macOS plugin pattern (AppleScript via osascript)
+
+Real, shipped: see `ComBridge.Plugins.{Excel,Word,PowerPoint,Outlook}.Mac`
+in this repo for live examples. All four follow the same template;
+extracting a new one for any AppleScript-driven Mac app takes ~30 min.
+
+### What changes vs. a Windows plugin
+
+| Aspect | Windows plugin | Mac plugin |
+|---|---|---|
+| `TargetFramework` | `net10.0-windows` | `net10.0` |
+| `SupportedPlatforms` | inherit default `[Windows]` | override → `[OSPlatform.OSX]` |
+| Interop reference | NuGet PIA or GAC HintPath | none (shells to `osascript`) |
+| `RotMonikerPatterns` | Used for ROT walk | Empty / unused |
+| `TryExtractRoot` | Used to ascend Workbook→App | Unused (no COM object) |
+| `DescribeInstance` | PID via HWND + Win32 | Stubbed; FindSessions does the work directly |
+| `FindSessions()` | Default impl uses SessionPicker | **Must override** with native discovery |
+| `CreateGlobals(comRoot)` | Casts comRoot to `_Application` | Ignores comRoot; instantiates wrapper |
+| Globals type | Strongly-typed COM interop | Custom thin wrapper (~10 members) |
+| Build prerequisites | Target app's COM install | Nothing beyond .NET 10 SDK |
+
+### Reference layout (copy + rename for a new Mac plugin)
+
+```
+src/plugins/ComBridge.Plugins.<App>.Mac/
+├── ComBridge.Plugins.<App>.Mac.csproj
+├── <Xx>MacApp.cs              ← AppleScript wrapper (Version, ActiveDoc, ...)
+└── <App>MacPlugin.cs          ← IComBridgePlugin impl + commands
+```
+
+References:
+- `..\..\ComBridge.Core\ComBridge.Core.csproj` (`<Private>false</Private>`)
+- `..\..\ComBridge.Mac.Common\ComBridge.Mac.Common.csproj` (the shared `Osascript` helper)
+
+### Skeleton (drop-in starting point)
+
+```csharp
+// MyAppMacPlugin.cs
+using System.Runtime.InteropServices;
+using ComBridge.Core;
+using ComBridge.Mac.Common;
+using Microsoft.CodeAnalysis;
+
+namespace ComBridge.Plugins.MyApp.Mac;
+
+public sealed class MyAppMacPlugin : IComBridgePlugin
+{
+    public string Name => "myapp";   // same CLI name as the Windows counterpart, if any
+    public string Description => "MyApp for macOS (AppleScript backend). Globals: myApp.";
+    public string[] ProgIds => new[] { "Exact AppleScript Application Name" };  // e.g. "Adobe Photoshop 2024"
+    public bool AllowCreateNew => true;
+    public Type GlobalsType => typeof(MyAppMacGlobals);
+
+    public IReadOnlyCollection<OSPlatform> SupportedPlatforms => new[] { OSPlatform.OSX };
+
+    public object CreateGlobals(object comRoot) => new MyAppMacGlobals();
+
+    public IEnumerable<MetadataReference> ScriptReferences
+    {
+        get
+        {
+            yield return MetadataReference.CreateFromFile(typeof(MyAppMacPlugin).Assembly.Location);
+            yield return MetadataReference.CreateFromFile(typeof(Osascript).Assembly.Location);
+        }
+    }
+
+    public IEnumerable<string> ScriptUsings => new[] { "ComBridge.Plugins.MyApp.Mac" };
+
+    public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[] { /* yours */ };
+
+    public List<(object Root, SessionInfo Info)> FindSessions()
+    {
+        var sessions = new List<(object, SessionInfo)>();
+        if (!Osascript.IsAvailable()) return sessions;
+
+        var running = Osascript.TryRun(
+            $"tell application \"System Events\" to (name of processes) contains \"{ProgIds[0]}\"");
+        if (running != "true") return sessions;
+
+        int? pid = null;
+        var pidRaw = Osascript.TryRun(
+            $"tell application \"System Events\" to unix id of (first process whose name is \"{ProgIds[0]}\")");
+        if (int.TryParse(pidRaw, out var n)) pid = n;
+
+        string? title = /* app-specific: ActiveDocumentName equivalent */ null;
+        var desc = (pid, title) switch
+        {
+            (int pp, string t) when !string.IsNullOrEmpty(t) => $"pid={pp}  title={t}",
+            (int pp, _)                                       => $"pid={pp}",
+            _                                                  => "(no info)",
+        };
+
+        sessions.Add((new object(), new SessionInfo(1, pid, title, desc)));
+        return sessions;
+    }
+
+    public (int? Pid, string? Title) DescribeInstance(object comRoot) => (null, null);
+}
+```
+
+### Worked examples that ship in this repo
+
+| App | Source | Notable |
+|---|---|---|
+| Excel | `src/plugins/ComBridge.Plugins.Excel.Mac/` | `DumpUsedRange` batches via one big AppleScript loop — avoid per-cell shell-outs |
+| Word | `src/plugins/ComBridge.Plugins.Word.Mac/` | `Content` via `content of text object of active document` |
+| PowerPoint | `src/plugins/ComBridge.Plugins.PowerPoint.Mac/` | `SlideTitles` loops in AppleScript; tab-joined return |
+| Outlook | `src/plugins/ComBridge.Plugins.Outlook.Mac/` | Limited dictionary documented; "New Outlook for Mac" caveat |
+
+### Other AppleScript-friendly apps you could write plugins for
+
+| App | AppleScript app name | Notes |
+|---|---|---|
+| Adobe Photoshop | `"Adobe Photoshop 2024"` (year suffix per version) | Rich dictionary; per-version ProgID-equivalent |
+| Adobe Illustrator | `"Adobe Illustrator"` | Same shape as Photoshop |
+| Adobe Acrobat Pro | `"Adobe Acrobat"` | Limited but workable for PDF manipulation |
+| OmniGraffle | `"OmniGraffle"` | Strong AppleScript support |
+| Sketch | `"Sketch"` | AppleScript support varies by version |
+| BBEdit | `"BBEdit"` | Excellent AppleScript dictionary |
+| Logic Pro / Final Cut Pro | varies | Apple's pro apps have rich dictionaries |
+
+For any of these, copy the Excel.Mac pattern, swap the application
+name, and define the wrapper API surface you actually need.
+
 ## Worked examples for shippable-by-LLM plugins
 
 These are the apps you'd plausibly want a plugin for, with the exact

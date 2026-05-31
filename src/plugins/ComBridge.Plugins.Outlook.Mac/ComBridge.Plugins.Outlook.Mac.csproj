@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>ComBridge.Plugins.Excel.Mac</RootNamespace>
-    <AssemblyName>ComBridge.Plugins.Excel.Mac</AssemblyName>
+    <RootNamespace>ComBridge.Plugins.Outlook.Mac</RootNamespace>
+    <AssemblyName>ComBridge.Plugins.Outlook.Mac</AssemblyName>
     <TargetFramework>net10.0</TargetFramework>
     <TargetFrameworks></TargetFrameworks>
   </PropertyGroup>
@@ -16,7 +16,7 @@
 
   <Target Name="CopyToPluginsRoot" AfterTargets="Build">
     <PropertyGroup>
-      <PluginsRoot>$(MSBuildThisFileDirectory)..\..\..\plugins\Excel.Mac</PluginsRoot>
+      <PluginsRoot>$(MSBuildThisFileDirectory)..\..\..\plugins\Outlook.Mac</PluginsRoot>
     </PropertyGroup>
     <ItemGroup>
       <PluginDeploy Include="$(OutputPath)*.dll" />

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ComBridge.Mac.Common</RootNamespace>
+    <AssemblyName>ComBridge.Mac.Common</AssemblyName>
+    <!-- net10.0 (NOT net10.0-windows): pure Process.Start, no Win32. Code
+         compiles on any OS; the IsAvailable() probe returns false on
+         non-macOS systems so callers degrade gracefully. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+  </PropertyGroup>
+</Project>

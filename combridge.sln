@@ -16,6 +16,14 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.Outlook",
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.Excel.Mac", "src\plugins\ComBridge.Plugins.Excel.Mac\ComBridge.Plugins.Excel.Mac.csproj", "{A0000008-0000-0000-0000-000000000008}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Mac.Common", "src\ComBridge.Mac.Common\ComBridge.Mac.Common.csproj", "{A0000009-0000-0000-0000-000000000009}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.Word.Mac", "src\plugins\ComBridge.Plugins.Word.Mac\ComBridge.Plugins.Word.Mac.csproj", "{A000000A-0000-0000-0000-00000000000A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.PowerPoint.Mac", "src\plugins\ComBridge.Plugins.PowerPoint.Mac\ComBridge.Plugins.PowerPoint.Mac.csproj", "{A000000B-0000-0000-0000-00000000000B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ComBridge.Plugins.Outlook.Mac", "src\plugins\ComBridge.Plugins.Outlook.Mac\ComBridge.Plugins.Outlook.Mac.csproj", "{A000000C-0000-0000-0000-00000000000C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -54,5 +62,21 @@ Global
 		{A0000008-0000-0000-0000-000000000008}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A0000008-0000-0000-0000-000000000008}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A0000008-0000-0000-0000-000000000008}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0000009-0000-0000-0000-000000000009}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0000009-0000-0000-0000-000000000009}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0000009-0000-0000-0000-000000000009}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0000009-0000-0000-0000-000000000009}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A000000A-0000-0000-0000-00000000000A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A000000A-0000-0000-0000-00000000000A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A000000A-0000-0000-0000-00000000000A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A000000A-0000-0000-0000-00000000000A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A000000B-0000-0000-0000-00000000000B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A000000B-0000-0000-0000-00000000000B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A000000B-0000-0000-0000-00000000000B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A000000B-0000-0000-0000-00000000000B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A000000C-0000-0000-0000-00000000000C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A000000C-0000-0000-0000-00000000000C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A000000C-0000-0000-0000-00000000000C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A000000C-0000-0000-0000-00000000000C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -1,13 +1,15 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace ComBridge.Plugins.Excel.Mac;
+namespace ComBridge.Mac.Common;
 
 /// <summary>
 /// Thin wrapper around <c>osascript</c> (the macOS AppleScript runner).
-/// Replaces the COM ROT/oleaut32 attach machinery used by the Windows
-/// Excel plugin — on macOS, Excel exposes its scripting surface via
-/// AppleEvents/AppleScript, NOT COM, so every "API call" becomes a
+/// Used by every Mac plugin (Excel.Mac, Word.Mac, PowerPoint.Mac,
+/// Outlook.Mac, …) to replace the COM ROT/oleaut32 attach machinery
+/// the Windows plugins use. On macOS, apps expose their scripting
+/// surface via AppleEvents/AppleScript, NOT COM, so every "API call"
+/// becomes a
 /// shell-out to <c>osascript -e '...'</c> with stdout parsed as text.
 /// </summary>
 /// <remarks>
