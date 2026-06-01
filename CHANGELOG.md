@@ -4,6 +4,73 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — outlook search on macOS
+
+Lifts the v0.4.0 deferral. The Mac Outlook plugin now ships a `search`
+command with the same flag surface as the Windows version, so a single
+ScripTree `.scriptree` wrapping `combridge outlook search ...` works on
+both OSes.
+
+### Added
+- **`outlook search` command** on `ComBridge.Plugins.Outlook.Mac` —
+  AppleScript-driven recursive mail search. Same flags as the Windows
+  Outlook plugin: `--query`, `--store`, `--folder`, `--fields`, `--max`,
+  `--since`, `--snippet`. Same TSV output columns
+  (`date, account, folder, sender, subject, [snippets]`) so downstream
+  parsing is OS-agnostic.
+- **`OlMacApp.Search(...)`** — programmatic Mac search API for `.csx`
+  scripts. Returns `List<SearchHit>` records (date, account, folder
+  path, sender name, sender address, subject, body). Body is only
+  fetched when `wantBody: true` since AppleScript body access is slow.
+
+### Implementation details
+- One big `osascript` invocation walks every Exchange/IMAP/POP account's
+  full folder tree (recursive AppleScript handler) and returns a
+  delimited blob using `␞` (U+241E) field separator + `␝` (U+241D) row
+  separator — characters extremely unlikely to appear in mail bodies.
+- The "subject vs body" filter is split into TWO separate `whose`
+  passes per folder (subject-contains, then content-contains) because
+  Outlook for Mac's AppleScript doesn't reliably accept compound
+  `whose ... or ...` predicates against `messages`.
+- Date filter is post-fetched in the script (AppleScript `whose` on
+  `date` comparisons against `time received` is locale-finicky); the
+  C# code formats the `--since` argument as `MM/DD/YYYY HH:MM`.
+- Snippet extraction (when `--snippet` is passed) is identical to the
+  Windows version: collapse whitespace → `Regex.Matches` → ±60-char
+  windows around each hit → cap at 3 non-overlapping windows per
+  message. Body is fetched per-hit which is the slow path; skip
+  `--snippet` if you only need the headers.
+
+### Performance vs. Windows
+- AppleScript `whose` is server-side for Exchange (acceptable) but
+  client-side for IMAP/POP (significantly slower than DASL `Restrict`).
+- Expect a query that finishes in ~50 ms on Windows DASL to take
+  several seconds on Mac AppleScript against the same mailbox.
+- Mitigation: always scope down with `--store`, `--folder`, and
+  `--since` for interactive use.
+
+### Caveats (Mac-only)
+- Targets **classic Outlook for Mac only**. "New Outlook for Mac" (the
+  2024+ Catalyst UI Microsoft has been rolling out) severely restricts
+  AppleScript automation; results may come back empty even when the
+  classic UI would have found matches. The plugin still loads — the
+  failure mode is "zero hits," not a crash.
+- No StoreID dedup (Mac Outlook doesn't expose one); duplicate accounts
+  with the same display name will produce duplicate hit rows.
+- First run will trigger a macOS TCC prompt ("ComBridge wants to
+  control Microsoft Outlook"). Approve in System Settings → Privacy &
+  Security → Automation.
+
+### Docs
+- `LLM/plugins.md` Mac Outlook section updated to remove the "no
+  search" caveat and document the new command.
+- `LLM/troubleshooting.md` gained an entry covering "Mac outlook search
+  returns zero hits" with the New-Outlook-for-Mac diagnosis and TCC
+  permission check.
+- FR `D:\Dev\FeatureRequests\ComBridge_FeatureRequests\FR_scripting_dx_and_outlook_search.md`
+  followup section updated: the previously-deferred Mac equivalent is
+  now shipped.
+
 ## [0.4.0] — script DX fixes + outlook search command
 
 Addresses `D:\Dev\FeatureRequests\ComBridge_FeatureRequests\FR_scripting_dx_and_outlook_search.md`

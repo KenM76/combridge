@@ -361,7 +361,7 @@ Windows and macOS. `PluginLoader` filters by current OS via
 | `excel` (Mac) | `"Microsoft Excel"` | `xlApp` (`XlMacApp`) | `info`, `dump-sheet` |
 | `word` (Mac) | `"Microsoft Word"` | `wdApp` (`WdMacApp`) | `info`, `extract-text`, `doc-stats` |
 | `powerpoint` (Mac) | `"Microsoft PowerPoint"` | `pptApp` (`PptMacApp`) | `info`, `list-slides` |
-| `outlook` (Mac) | `"Microsoft Outlook"` | `olApp` (`OlMacApp`) | `info`, `list-accounts` |
+| `outlook` (Mac) | `"Microsoft Outlook"` | `olApp` (`OlMacApp`) | `info`, `list-accounts`, `search` |
 
 ## What's different vs the Windows plugins (script-author level)
 
@@ -377,8 +377,17 @@ Windows and macOS. `PluginLoader` filters by current OS via
   user. `list-sessions` always returns 0 or 1 entries.
 - **Outlook for Mac has a thinner dictionary** than Windows MAPI. No
   Stores collection, no Restrict() with Jet syntax, limited message
-  body access. The plugin exposes accounts + inbox counts; richer
-  scripting requires falling back to direct osascript.
+  body access. The plugin exposes accounts + inbox counts + recursive
+  `search` (AppleScript whose-clause); richer scripting requires
+  falling back to direct osascript.
+- **`outlook search` on Mac uses AppleScript `whose`-clause filters**
+  (v0.4.1+) instead of Windows' DASL `Restrict`. Same CLI shape
+  (`--query`, `--store`, `--folder`, `--fields`, `--max`, `--since`,
+  `--snippet`) and same TSV output, but significantly slower —
+  AppleScript `whose` is server-side for Exchange but client-side for
+  IMAP/POP. Always scope down with `--since` + `--store` for
+  interactive use. See `CHANGELOG.md` for the v0.4.1 entry with full
+  detail on the implementation and caveats.
 
 ## Implementation notes for future Mac plugin authors
 

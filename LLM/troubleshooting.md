@@ -504,6 +504,40 @@ end tell
 Improving Outlook" toggle, or Outlook → "New Outlook" toggle off). Or
 wait for a Microsoft Graph REST-based plugin (not yet in this repo).
 
+### `outlook search` on Mac returns zero hits when matches clearly exist
+
+**Symptom.** `combridge outlook search --query "invoice" -` prints
+zero rows + `# hits emitted: 0`, but the user can see matching messages
+in Outlook.
+
+**Likely causes (in priority order):**
+
+1. **"New Outlook for Mac" is active.** Microsoft's 2024+ Catalyst UI
+   severely restricts AppleScript automation. Switch back to classic
+   Outlook (toggle "New Outlook" off in the menu bar). See the
+   New-Outlook entry above for full diagnosis.
+2. **TCC permission denied for Outlook automation.** First run triggers
+   a system prompt asking for permission for the running combridge
+   process to control Outlook. If declined, subsequent runs silently
+   return empty results. Fix: System Settings → Privacy & Security →
+   Automation → grant the combridge host (Terminal, your IDE, or
+   `combridge` directly) control of Microsoft Outlook.
+3. **Query string typo or wrong field set.** AppleScript `contains` is
+   case-insensitive by default; spelling matters. Try `--fields
+   subject,body` (the default) explicitly.
+4. **`--store` substring doesn't match any account name.** Run
+   `combridge outlook list-accounts -` first to see exact account names;
+   match a substring of one of them.
+5. **`--since` cuts off everything.** Drop it for a sanity check.
+
+**Performance note.** The Mac search is significantly slower than the
+Windows DASL/Restrict path — AppleScript `whose` is client-side for
+IMAP/POP accounts. A query against a 50k-message Exchange mailbox
+that finishes in ~50ms on Windows may take several seconds on Mac.
+Always scope down with `--since` + `--store` + `--folder` for
+interactive use. See `CHANGELOG.md` v0.4.1 entry for the full
+performance/implementation discussion.
+
 ### `Osascript.IsAvailable()` returns false on macOS
 
 **Cause.** `osascript` not on PATH. Very rare — it's a core macOS
