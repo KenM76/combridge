@@ -11,6 +11,96 @@ copy-pasteable script body (drop into a `.csx` file, run with
 > - `dynamic` works (Microsoft.CSharp is in the default refs)
 > - `Console.Out` and `Console.Error` are redirected to the bridge's output writer
 
+## Default reference set + import set
+
+`ScriptHost.RunAsync` calls `ScriptOptions.Default.WithReferences(refs)`
+which **replaces** Roslyn's default references rather than appending. So
+the references available to your `.csx` are exactly:
+
+### References (assemblies the script can call into)
+
+| Assembly | Brings |
+|---|---|
+| `System.Private.CoreLib` (via `typeof(object)`) | base types — `object`, `string`, primitives, `Exception`, `StringBuilder`, collections, `Task`, etc. |
+| `System.Linq` | LINQ extension methods |
+| `System.Console` | `Console.WriteLine` etc. |
+| `Microsoft.CSharp` + `System.Runtime` (DynamicAttribute) + `System.Linq.Expressions` (CallSite) | `dynamic` support |
+| `System.Text.RegularExpressions` | `Regex` |
+| `System.Text.Json` | `JsonSerializer` |
+| `System.Net.Http` | `HttpClient` |
+| `System.Xml.ReaderWriter` + `System.Private.Xml` | `XmlReader`, `XmlDocument`, LINQ-to-XML |
+| `System.Diagnostics.Process` | `Process.Start` (used by Mac plugins; available to any script) |
+| `System.Net.WebUtility` | URL/HTML encoding |
+| **The plugin's assembly** | the plugin's globals type + any helpers |
+| **The plugin's globals type assembly** | (often the same DLL) |
+| **`plugin.ScriptReferences`** | whatever the plugin adds — typically interop DLLs (`Microsoft.Office.Interop.Excel.dll`, `SolidWorks.Interop.*.dll`, etc.) |
+
+### Imports (namespaces auto-imported)
+
+Always:
+
+| `System` | `System.Collections.Generic` | `System.IO` | `System.Linq` | `System.Runtime.InteropServices` |
+|---|---|---|---|---|
+
+Plus the plugin's `ScriptUsings` — for the shipped plugins:
+
+| Plugin | Auto-imported namespaces |
+|---|---|
+| `solidworks` | `SolidWorks.Interop.sldworks`, `SolidWorks.Interop.swconst`, `SolidWorks.Interop.swcommands` |
+| `excel` (Windows) | `Microsoft.Office.Interop.Excel` |
+| `word` (Windows) | `Microsoft.Office.Interop.Word` |
+| `powerpoint` (Windows) | `Microsoft.Office.Interop.PowerPoint` |
+| `outlook` (Windows) | `Microsoft.Office.Interop.Outlook` |
+| `excel`/`word`/`powerpoint`/`outlook` (Mac) | `ComBridge.Plugins.<App>.Mac` |
+
+### Adding extra references from a script
+
+The host honors Roslyn `#r` directives for framework-resolvable assemblies:
+
+```csharp
+#r "System.Net.WebSockets.Client"
+#r "System.Drawing.Common"
+using System.Net.WebSockets;
+```
+
+Place `#r` lines BEFORE any `using` directive. For per-file `.csx` dep
+resolution beyond the framework, the host has no NuGet integration; ship
+the DLL alongside the script and use `#r "path/to/MyLib.dll"`.
+
+### ⚠ Office interop namespaces shadow common BCL names
+
+Every Office interop namespace defines its OWN `Exception`, `Application`,
+`Style`, `Action`, `Font`, `Page` etc. — these clash with `System.*`. Inside
+any Office script (Excel/Word/PowerPoint/Outlook on Windows), the plugin's
+`ScriptUsings` imports the interop namespace, so unqualified references
+become ambiguous.
+
+```csharp
+// ❌ fails in any Outlook .csx with:
+//   error CS0104: 'Exception' is an ambiguous reference between
+//   'Microsoft.Office.Interop.Outlook.Exception' and 'System.Exception'
+try { ... }
+catch (Exception ex) { Console.WriteLine(ex.Message); }
+
+// ✓ works — fully qualify the BCL type
+try { ... }
+catch (System.Exception ex) { Console.WriteLine(ex.Message); }
+```
+
+Common collisions to fully-qualify when writing Office scripts:
+
+| BCL type | Use as |
+|---|---|
+| `Exception` | `System.Exception` |
+| `Action` | `System.Action` (for delegates; Office's `Action` is different) |
+| `Style` | `System.Drawing.Style` if you actually want it; otherwise just don't import `System.Drawing` |
+| `Font`, `Color` | `System.Drawing.Font` / `System.Drawing.Color` |
+| `Page` (PPT) | `System.Web.Page` etc. |
+
+Or restructure to avoid the conflict: throw and let the host log it
+instead of `catch`ing, or catch a more specific type
+(`COMException`, `InvalidOperationException`, etc. which don't collide).
+
 ## Excel (`xlApp`, `xlBook`, `xlSheet`)
 
 ### Read a single cell

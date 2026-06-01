@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — script DX fixes + outlook search command
+
+Addresses `D:\Dev\FeatureRequests\ComBridge_FeatureRequests\FR_scripting_dx_and_outlook_search.md`
+in full. All four items shipped.
+
+### Added
+- **Wider script default references** — `ScriptHost.RunAsync` now adds
+  `System.Text.RegularExpressions`, `System.Text.Json`, `System.Net.Http`,
+  `System.Xml.ReaderWriter` + `System.Private.Xml`,
+  `System.Diagnostics.Process`, and `System.Net.WebUtility` to the
+  default reference set. User .csx files can now `using
+  System.Text.RegularExpressions;` + `Regex.Replace(...)` without explicit
+  `#r` directives. (FR item 1)
+- **Documented default reference + import contract** — `LLM/scripting.md`
+  gained a "Default reference set + import set" section enumerating every
+  assembly the script can call into, every namespace auto-imported, how
+  `#r` directives work, and a worked Office-Exception-ambiguity warning.
+  (FR items 1, 2)
+- **`outlook search` command** (Windows Outlook plugin) — recursive
+  mail-content search across MAPI stores using DASL `Restrict` for
+  speed. Flags: `--query`, `--store`, `--folder`, `--fields`, `--max`,
+  `--since`, `--snippet`. Per-folder try/catch tolerates unscriptable
+  stores; deduplicates stores by StoreID; snippet extraction via
+  `Regex` (now in default refs). Live-tested against a multi-store
+  Exchange/IMAP mailbox. (FR item 3)
+- **Helpful "no plugins discovered" error message** — when subcommand
+  dispatch finds no plugins, `Program.cs` now prints an explicit hint
+  block covering the three real causes (binary not staged next to
+  `plugins/`, plugin DLL naming, OS filter exclusion) instead of an
+  empty `Available:` list. `LLM/troubleshooting.md` gained a new entry
+  cross-referencing the subcommand-path symptom. (FR item 4)
+
+### Changed
+- `Program.cs` plugin-not-found error path now distinguishes
+  "plugin name typo" vs "no plugins at all" — different messages, both
+  actionable.
+
+### Notes
+- The Mac Outlook plugin does NOT yet have a `search` command. DASL
+  `Restrict` is Windows-only; a Mac AppleScript equivalent using
+  `whose`-clause filters would be ~100× slower and is deferred until
+  there's demand.
+- Roslyn `#r "Name"` directives for framework-resolvable assemblies
+  already worked (Roslyn's default `ScriptMetadataResolver` ships with
+  the host; `WithReferences` doesn't clear it). Now documented.
+
 ## [0.3.1] — full Mac Office coverage + CI + comprehensive docs sweep
 
 ### Added

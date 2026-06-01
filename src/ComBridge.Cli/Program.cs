@@ -85,8 +85,29 @@ internal static class Program
                 string.Equals(p.Name, pluginName, StringComparison.OrdinalIgnoreCase));
             if (plugin is null)
             {
-                Console.Error.WriteLine($"ERROR: no plugin named '{pluginName}'. Available:");
-                foreach (var p in plugins) Console.Error.WriteLine($"  {p.Name}");
+                Console.Error.WriteLine($"ERROR: no plugin named '{pluginName}'.");
+                if (plugins.Count == 0)
+                {
+                    // The "empty available list" case is almost always a deployment
+                    // problem: the combridge binary isn't staged next to a populated
+                    // plugins/ directory. Point users at that fix directly — the
+                    // bare "Available:" empty list otherwise looks like there's
+                    // simply no plugin of that name, when actually NO plugins were
+                    // discovered at all.
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine("No plugins were discovered. Common causes:");
+                    Console.Error.WriteLine($"  • combridge binary at {AppContext.BaseDirectory}");
+                    Console.Error.WriteLine($"    is not staged next to a 'plugins/' directory.");
+                    Console.Error.WriteLine($"  • Plugin DLL names don't follow 'ComBridge.Plugins.<DirName>.dll'.");
+                    Console.Error.WriteLine($"  • OS filter excluded all plugins (none have SupportedPlatforms matching this OS).");
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine("See LLM/troubleshooting.md § 'No plugins discovered'.");
+                }
+                else
+                {
+                    Console.Error.WriteLine("Available plugins:");
+                    foreach (var p in plugins) Console.Error.WriteLine($"  {p.Name}");
+                }
                 return 64;
             }
 

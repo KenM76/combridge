@@ -88,6 +88,22 @@ public static class ScriptHost
         refs.Add(MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.DynamicAttribute).Assembly.Location));
         refs.Add(MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.CallSite).Assembly.Location));
 
+        // "Batteries-included" reference set — common framework assemblies that
+        // user .csx files reach for without thinking. Added because the script
+        // host explicitly replaces ScriptOptions.Default.References via
+        // WithReferences, so anything not enumerated here is genuinely
+        // unresolvable inside a script. Each entry costs ~nothing per script
+        // run; missing any of them costs a confused compile error and a
+        // detour through `using/include?` debugging. See FR
+        // `FR_scripting_dx_and_outlook_search.md` § Item 1.
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Text.RegularExpressions.Regex).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Text.Json.JsonSerializer).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Net.Http.HttpClient).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Xml.XmlReader).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Xml.XmlDocument).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Diagnostics.Process).Assembly.Location));
+        refs.Add(MetadataReference.CreateFromFile(typeof(System.Net.WebUtility).Assembly.Location));
+
         var options = ScriptOptions.Default
             .WithReferences(refs)
             .WithImports(new[]

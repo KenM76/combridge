@@ -98,6 +98,28 @@ machine; the hardcoded path is portable.
 
 Full notes: `C:\personal_rag\claude_code\lesson_20260521_excel_dispinterface_vs_coclass_cast.md`.
 
+### `no plugin named 'X'.` with an empty Available list (subcommand path)
+
+**Symptom.** Running any subcommand (e.g. `combridge outlook info -`)
+emits:
+
+```
+ERROR: no plugin named 'outlook'.
+
+No plugins were discovered. Common causes:
+  • combridge binary at <path> is not staged next to a 'plugins/' directory.
+  • Plugin DLL names don't follow 'ComBridge.Plugins.<DirName>.dll'.
+  • OS filter excluded all plugins (none have SupportedPlatforms matching this OS).
+```
+
+(As of v0.4.0 the hint block prints automatically when the available
+list is empty; earlier versions just printed `Available:` with nothing
+below it.)
+
+**Cause + fix.** Same as `(no plugins discovered)` below — the subcommand
+path takes you to the empty-plugin-list condition via a different
+code path. See that entry for the actual fix.
+
 ### `(no plugins discovered)` from `list-plugins`
 
 **Cause.** One of:
