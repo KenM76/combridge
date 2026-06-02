@@ -51,6 +51,18 @@ public sealed class OutlookPlugin : IComBridgePlugin
 
     public IEnumerable<string> ScriptUsings => new[] { "Microsoft.Office.Interop.Outlook" };
 
+    /// <summary>
+    /// Auto-provide the conventional two-letter alias for the Outlook
+    /// interop namespace so user .csx files can write
+    /// <c>Ol.MailItem msg = item as Ol.MailItem;</c> without re-declaring
+    /// <c>using Ol = global::Microsoft.Office.Interop.Outlook;</c> at the
+    /// top of every script. See FR_office_script_interop_alias.md.
+    /// </summary>
+    public IEnumerable<string> ScriptUsingAliases => new[]
+    {
+        "Ol = global::Microsoft.Office.Interop.Outlook",
+    };
+
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new OlInfoCommand(),

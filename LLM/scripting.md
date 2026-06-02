@@ -70,10 +70,56 @@ the DLL alongside the script and use `#r "path/to/MyLib.dll"`.
 ### ⚠ Office interop namespaces shadow common BCL names
 
 Every Office interop namespace defines its OWN `Exception`, `Application`,
-`Style`, `Action`, `Font`, `Page` etc. — these clash with `System.*`. Inside
-any Office script (Excel/Word/PowerPoint/Outlook on Windows), the plugin's
-`ScriptUsings` imports the interop namespace, so unqualified references
-become ambiguous.
+`Style`, `Action`, `Font`, `Page`, **and `Range`** — these clash with
+`System.*`. Inside any Office script (Excel/Word/PowerPoint/Outlook on
+Windows), the plugin's `ScriptUsings` imports the interop namespace, so
+unqualified references become ambiguous.
+
+`Range` is the worst offender because modern C# added `System.Range` (for
+`x[1..3]` slicing), so even the single most common Office idiom —
+`Range used = xlSheet.UsedRange;` — fails to compile with CS0104.
+
+### ✓ Two-letter alias (auto-provided, v0.4.2+) — the recommended pattern
+
+The four Windows Office plugins auto-contribute a conventional two-letter
+alias for their interop namespace, prepended to your script source before
+compile. You can write the qualified form **without declaring the alias
+yourself**:
+
+| Plugin | Auto-provided alias | Use as |
+|---|---|---|
+| `excel`      | `Xl = global::Microsoft.Office.Interop.Excel`      | `Xl.Range used = ws.UsedRange;` |
+| `word`       | `Wd = global::Microsoft.Office.Interop.Word`       | `Wd.Range rng = wdDoc.Content;` |
+| `powerpoint` | `Pp = global::Microsoft.Office.Interop.PowerPoint` | `Pp.Shape sh = slide.Shapes[1];` |
+| `outlook`    | `Ol = global::Microsoft.Office.Interop.Outlook`    | `Ol.MailItem msg = (Ol.MailItem)item;` |
+
+```csharp
+// ✓ works in v0.4.2+ — no `using Xl = ...;` needed
+Xl.Range used = xlSheet.UsedRange;
+foreach (Xl.Range row in used.Rows) { /* ... */ }
+catch (System.Exception ex) { Console.WriteLine(ex.Message); }
+```
+
+Note that **bare `Range` is still ambiguous** — this is deliberate. The
+alias only guarantees a reliable qualifier (`Xl.Range`) is always in scope;
+it does NOT try to silently pick the Office type over `System.Range`.
+
+#### Mechanics (only matters if you're debugging a weird error)
+
+The host prepends `using Xl = global::Microsoft.Office.Interop.Excel; ` to
+the script source as a one-line preamble before passing it to Roslyn.
+Compile-error line/column numbers are remapped back to the author's real
+source — a CS0104 reported at "line 168" of the compiled source surfaces as
+line 167 of your .csx, matching what you'd see in an editor.
+
+If you need to inspect the preamble or contribute one from your own
+plugin, see `IComBridgePlugin.ScriptUsingAliases` in
+`src/ComBridge.Core/IComBridgePlugin.cs`.
+
+### Fallback: fully-qualify the BCL type
+
+If you'd rather not use the alias (or you're on a combridge older than
+v0.4.2), fully-qualify the BCL side instead:
 
 ```csharp
 // ❌ fails in any Outlook .csx with:
@@ -87,15 +133,17 @@ try { ... }
 catch (System.Exception ex) { Console.WriteLine(ex.Message); }
 ```
 
-Common collisions to fully-qualify when writing Office scripts:
+Common collisions to fully-qualify (or use the auto-provided alias on the
+Office side):
 
-| BCL type | Use as |
-|---|---|
-| `Exception` | `System.Exception` |
-| `Action` | `System.Action` (for delegates; Office's `Action` is different) |
-| `Style` | `System.Drawing.Style` if you actually want it; otherwise just don't import `System.Drawing` |
-| `Font`, `Color` | `System.Drawing.Font` / `System.Drawing.Color` |
-| `Page` (PPT) | `System.Web.Page` etc. |
+| BCL type | Use as | Or |
+|---|---|---|
+| `Range` (modern C# slicing) | `System.Range` | `Xl.Range` / `Wd.Range` |
+| `Exception` | `System.Exception` | `Ol.Exception` (rarely what you want) |
+| `Action` | `System.Action` (delegate) | `Wd.Action` / `Pp.Action` (different concept) |
+| `Style`, `Font`, `Color` | `System.Drawing.*` | `Wd.Style` / `Xl.Style` / `Pp.Style` |
+| `Page` | `System.Web.Page` | `Wd.Page` / `Pp.Page` |
+| `Application` | `System.Windows.Application` | `Xl.Application` etc. |
 
 Or restructure to avoid the conflict: throw and let the host log it
 instead of `catch`ing, or catch a more specific type

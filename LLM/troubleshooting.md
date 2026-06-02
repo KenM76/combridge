@@ -6,6 +6,58 @@ the right section based on when the error fires.
 
 ## Build-time errors
 
+### `error CS0104: 'Range' is an ambiguous reference between 'Microsoft.Office.Interop.Word.Range' and 'System.Range'` (or `Exception`, `Application`, `Style`, …)
+
+**Symptom.** A `.csx` running under any Windows Office plugin
+(`excel` / `word` / `powerpoint` / `outlook`) fails to compile with
+CS0104 on a bare identifier the BCL and the Office interop namespace
+both define. Most common offender is `Range` because modern C# added
+`System.Range` for slicing syntax.
+
+**Why.** The Office plugin's `ScriptUsings` imports the interop
+namespace so authors can write `Application`, `Range`, etc. unqualified.
+But that namespace also defines its own `Exception`, `Application`,
+`Style`, `Action`, `Font`, `Range`, etc. that collide with `System.*`.
+Roslyn refuses to pick one.
+
+**Fix (v0.4.2+ — recommended).** Use the **auto-provided two-letter
+alias** the plugin contributes to your script. No `using ... = ...`
+declaration needed — it's already in scope:
+
+```csharp
+Xl.Range used = xlSheet.UsedRange;     // not bare Range
+Wd.Range rng  = wdDoc.Content;
+catch (System.Exception ex) { ... }    // qualify the BCL side
+```
+
+Alias table:
+
+| Plugin       | Auto-alias                                           |
+|--------------|-----------------------------------------------------|
+| `excel`      | `Xl = global::Microsoft.Office.Interop.Excel`      |
+| `word`       | `Wd = global::Microsoft.Office.Interop.Word`       |
+| `powerpoint` | `Pp = global::Microsoft.Office.Interop.PowerPoint` |
+| `outlook`    | `Ol = global::Microsoft.Office.Interop.Outlook`    |
+
+**Fix (older combridge).** Either declare the alias yourself at the
+top of the .csx:
+
+```csharp
+using Xl = global::Microsoft.Office.Interop.Excel;
+Xl.Range used = xlSheet.UsedRange;
+```
+
+…or fully-qualify the BCL side every time (`System.Exception`,
+`System.Range`, etc.). See `LLM/scripting.md` § "Office interop
+namespaces shadow common BCL names" for the full collision table.
+
+**Note: bare `Range` stays ambiguous on purpose.** The auto-alias
+guarantees a reliable qualifier is in scope; it does NOT silently win
+the race against `System.Range`. If you want bare `Range` to mean the
+Office type, add `using Range = Xl.Range;` to your own script.
+
+See FR `FR_office_script_interop_alias.md` for the design rationale.
+
 ### `error COMBRIDGE001: ... could not locate its required interop assemblies`
 
 **Cause.** A plugin declared `@(RequiredInteropFile)` items in its csproj

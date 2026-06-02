@@ -103,6 +103,17 @@ public sealed class ExcelPlugin : IComBridgePlugin
         "Microsoft.Office.Interop.Excel",
     };
 
+    /// <summary>
+    /// Auto-provide the conventional two-letter alias for the Excel interop
+    /// namespace so user .csx files can write <c>Xl.Range used = ws.UsedRange;</c>
+    /// without re-declaring <c>using Xl = global::Microsoft.Office.Interop.Excel;</c>
+    /// at the top of every script. See FR_office_script_interop_alias.md.
+    /// </summary>
+    public IEnumerable<string> ScriptUsingAliases => new[]
+    {
+        "Xl = global::Microsoft.Office.Interop.Excel",
+    };
+
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new InfoCommand(),

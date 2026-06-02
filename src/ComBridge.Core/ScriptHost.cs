@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
@@ -136,13 +138,41 @@ public static class ScriptHost
             loader.RegisterDependency(plugin.GetType().Assembly);
             loader.RegisterDependency(plugin.GlobalsType.Assembly);
 
-            using var scriptStream = File.OpenRead(scriptPath);
-            var script = CSharpScript.Create(scriptStream, options, plugin.GlobalsType, loader);
+            // Build the alias preamble (FR_office_script_interop_alias.md).
+            // Each plugin-contributed alias is rendered as `using <alias>; `
+            // and the whole set is concatenated onto a SINGLE first line so
+            // line-number offsetting is exactly 1 (the script body's line 1
+            // becomes compiled line 2). If a plugin contributes nothing, the
+            // preamble is empty and there's zero behavior change.
+            var aliases = plugin.ScriptUsingAliases?.ToList() ?? new List<string>();
+            string preamble = aliases.Count == 0
+                ? ""
+                : string.Concat(aliases.Select(a => $"using {a}; ")) + "\n";
+            int preambleLineOffset = preamble.Length == 0 ? 0 : 1;
+
+            // To keep PDB emit happy (CS8055 needs explicit encoding), we
+            // build a MemoryStream that preserves the source file's BOM (if
+            // any) and uses the matching encoding for the preamble bytes.
+            // Without this, mixing UTF-8-BOM script content with default-
+            // encoded preamble would corrupt non-ASCII characters in the body.
+            byte[] scriptBytes = File.ReadAllBytes(scriptPath);
+            (Encoding enc, int bomLen) = DetectEncoding(scriptBytes);
+            using var ms = new MemoryStream(bomLen + preamble.Length * 2 + scriptBytes.Length);
+            if (bomLen > 0) ms.Write(scriptBytes, 0, bomLen);
+            if (preamble.Length > 0)
+            {
+                byte[] preBytes = enc.GetBytes(preamble);
+                ms.Write(preBytes, 0, preBytes.Length);
+            }
+            ms.Write(scriptBytes, bomLen, scriptBytes.Length - bomLen);
+            ms.Position = 0;
+
+            var script = CSharpScript.Create(ms, options, plugin.GlobalsType, loader);
             var diags = script.Compile();
             var errors = diags.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
             if (errors.Count > 0)
             {
-                foreach (var d in errors) output.WriteLine(d.ToString());
+                foreach (var d in errors) output.WriteLine(RemapDiagnosticLine(d.ToString(), preambleLineOffset));
                 return 3;
             }
             var state = await script.RunAsync(globals);
@@ -168,5 +198,51 @@ public static class ScriptHost
             Console.SetOut(originalOut);
             Console.SetError(originalErr);
         }
+    }
+
+    /// <summary>
+    /// Detect the encoding + BOM length of raw source bytes. Default is
+    /// UTF-8 without BOM (Roslyn's expectation for the streaming overload).
+    /// </summary>
+    private static (Encoding enc, int bomLen) DetectEncoding(byte[] bytes)
+    {
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return (new UTF8Encoding(true), 3);
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return (Encoding.Unicode, 2);     // UTF-16 LE
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return (Encoding.BigEndianUnicode, 2);  // UTF-16 BE
+        if (bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+            return (Encoding.UTF32, 4);
+        return (new UTF8Encoding(false), 0);
+    }
+
+    /// <summary>
+    /// Rewrite Roslyn diagnostic strings so reported line numbers point at
+    /// the author's real source. Diagnostic text format is:
+    /// <c>&lt;path&gt;(LINE,COL): severity ID: message</c> — we capture
+    /// <c>(LINE,COL)</c> and subtract the preamble offset from LINE.
+    /// <para>
+    /// If the offending span is actually inside the injected preamble
+    /// (which would be a bug in the plugin's alias declaration, not the
+    /// author's script), we leave the line number alone so the bug is
+    /// visible rather than presenting as "your script line 0" gibberish.
+    /// </para>
+    /// </summary>
+    private static readonly Regex DiagLocRx = new(
+        @"\((?<line>\d+),(?<col>\d+)\)",
+        RegexOptions.Compiled);
+
+    private static string RemapDiagnosticLine(string diagText, int preambleLineOffset)
+    {
+        if (preambleLineOffset == 0) return diagText;
+        return DiagLocRx.Replace(diagText, m =>
+        {
+            int reportedLine = int.Parse(m.Groups["line"].Value);
+            int col = int.Parse(m.Groups["col"].Value);
+            int realLine = reportedLine - preambleLineOffset;
+            if (realLine < 1) return m.Value;  // preamble-side error — leave as-is
+            return $"({realLine},{col})";
+        });
     }
 }

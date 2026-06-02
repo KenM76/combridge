@@ -45,6 +45,17 @@ public sealed class WordPlugin : IComBridgePlugin
 
     public IEnumerable<string> ScriptUsings => new[] { "Microsoft.Office.Interop.Word" };
 
+    /// <summary>
+    /// Auto-provide the conventional two-letter alias for the Word interop
+    /// namespace so user .csx files can write <c>Wd.Range rng = wdDoc.Content;</c>
+    /// without re-declaring <c>using Wd = global::Microsoft.Office.Interop.Word;</c>
+    /// at the top of every script. See FR_office_script_interop_alias.md.
+    /// </summary>
+    public IEnumerable<string> ScriptUsingAliases => new[]
+    {
+        "Wd = global::Microsoft.Office.Interop.Word",
+    };
+
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new WdInfoCommand(),

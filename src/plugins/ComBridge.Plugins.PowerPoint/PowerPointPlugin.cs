@@ -54,6 +54,18 @@ public sealed class PowerPointPlugin : IComBridgePlugin
 
     public IEnumerable<string> ScriptUsings => new[] { "Microsoft.Office.Interop.PowerPoint" };
 
+    /// <summary>
+    /// Auto-provide the conventional two-letter alias for the PowerPoint
+    /// interop namespace so user .csx files can write
+    /// <c>Pp.Shape sh = slide.Shapes[1];</c> without re-declaring
+    /// <c>using Pp = global::Microsoft.Office.Interop.PowerPoint;</c> at the
+    /// top of every script. See FR_office_script_interop_alias.md.
+    /// </summary>
+    public IEnumerable<string> ScriptUsingAliases => new[]
+    {
+        "Pp = global::Microsoft.Office.Interop.PowerPoint",
+    };
+
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new PptInfoCommand(),

@@ -4,6 +4,84 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — auto-provided interop aliases for Office scripts
+
+Addresses `D:\Dev\FeatureRequests\ComBridge_FeatureRequests\FR_office_script_interop_alias.md`
+in full. Implements the FR's primary proposal (option **b** —
+plugin-contributed aliases rendered into a host preamble) rather than the
+doc-only fallback.
+
+### Why this exists
+
+Every Windows Office `.csx` hit the same CS0104 pain point: the interop
+namespace defines its own `Range`, `Exception`, `Application`, `Style`,
+`Font`, `Action`, `Page`, etc., colliding with the same-named BCL types.
+`Range` is the worst offender because modern C# added `System.Range` for
+slicing syntax — so the single most common Office idiom
+(`Range used = xlSheet.UsedRange;`) failed to compile until every
+script author re-typed `using Xl = global::Microsoft.Office.Interop.Excel;`
+at the top. The FR identified this pattern sitting latent in 15 scripts
+across the ScripTreeApps catalog, surfacing only on first run.
+
+### Added
+- **`IComBridgePlugin.ScriptUsingAliases`** — new optional contract
+  member. Returns alias bodies (e.g. `"Xl = global::Microsoft.Office.Interop.Excel"`);
+  the host renders them as `using <alias>;` directives. Default = empty,
+  so existing plugins (SolidWorks, all Mac plugins) compile and run
+  unchanged with zero behavior change.
+- **Alias preamble** in `ScriptHost.RunAsync` — concatenates each
+  plugin's contributed aliases onto a single first line of the script
+  source, preserving BOM + encoding so PDB emit still works
+  (CS8055-free) and non-ASCII characters in script bodies round-trip
+  intact. Roslyn `ScriptOptions.Imports` accepts namespaces but not
+  alias directives, so the preamble route is the only working option.
+- **Diagnostic line-number remapping** — `RemapDiagnosticLine` rewrites
+  the `(LINE,COL)` span in Roslyn diagnostic strings so compile errors
+  point at the author's real source. A CS0104 reported at compiled
+  line 168 surfaces as line 167 (matching what the author sees in their
+  editor). Errors inside the preamble itself (a plugin-author bug,
+  not a script-author bug) are left untouched so they're loud.
+- **Four Windows Office plugins now contribute their alias** —
+  `excel` → `Xl`, `word` → `Wd`, `powerpoint` → `Pp`, `outlook` → `Ol`
+  (all qualified to `global::Microsoft.Office.Interop.*`). Mac plugins
+  contribute nothing — they don't have an interop namespace to shadow.
+
+### What stays the same (deliberately)
+
+- **Bare `Range` is still ambiguous.** The alias only guarantees a
+  reliable qualifier (`Xl.Range`, `Wd.Range`) is always in scope; it
+  does NOT silently pick the Office type over `System.Range`. This is
+  the FR's explicit acceptance criterion — we don't want to win the
+  bare-name race for the author.
+- **`System.Exception` etc. still need to be qualified** (or you can
+  catch a non-colliding subtype like `COMException`). The new aliases
+  fix the Office-side qualifier, not the BCL side.
+- **Existing scripts that already declare `using Xl = …` keep working.**
+  Roslyn quietly accepts the duplicate (same alias to the same
+  namespace); we don't conflict with manual declarations.
+
+### Verified
+
+- Positive: a Word `.csx` containing `typeof(Wd.Application).FullName`
+  compiles and runs with NO author-declared alias.
+- Negative: a Word `.csx` containing bare `Range r;` still fails with
+  CS0104 between `Microsoft.Office.Interop.Word.Range` and
+  `System.Range` — confirming we didn't accidentally resolve the race.
+- Line-number remap: the CS0104 from the negative test surfaces at
+  `(2,1)` (the author's actual line in the .csx), not `(3,1)` —
+  proving the preamble offset is being subtracted.
+
+### Docs
+- `LLM/scripting.md` § "Office interop namespaces shadow common BCL
+  names" rewritten to lead with the auto-provided alias (recommended)
+  and show the fully-qualify fallback. New alias-mechanics note
+  explains the preamble + line remap for plugin authors.
+- `LLM/troubleshooting.md` gained a dedicated CS0104 entry covering
+  Office-interop / BCL collisions with the alias table inline and the
+  rationale for keeping bare `Range` ambiguous.
+- `FR_office_script_interop_alias.md` stamped with implementation log
+  noting which option was taken (b, not a) and why.
+
 ## [0.4.1] — outlook search on macOS
 
 Lifts the v0.4.0 deferral. The Mac Outlook plugin now ships a `search`

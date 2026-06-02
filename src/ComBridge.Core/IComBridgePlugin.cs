@@ -49,6 +49,38 @@ public interface IComBridgePlugin
     IEnumerable<string> ScriptUsings { get; }
 
     /// <summary>
+    /// C# alias directives the host prepends to the script source before
+    /// compiling, one per element. Each element is the alias body WITHOUT
+    /// the leading <c>using</c> keyword and WITHOUT the trailing semicolon,
+    /// e.g. <c>"Wd = global::Microsoft.Office.Interop.Word"</c> — the host
+    /// emits <c>using Wd = global::Microsoft.Office.Interop.Word;</c>.
+    /// <para>
+    /// Why this exists separately from <see cref="ScriptUsings"/>: Roslyn's
+    /// <c>ScriptOptions.Imports</c> accepts namespaces and <c>static</c>
+    /// usings but NOT alias directives, so an alias can't be contributed
+    /// the same way namespaces are. The script host works around it by
+    /// rendering aliases into a one-line preamble at the top of the script
+    /// source and remapping diagnostic line numbers back to the author's
+    /// real source. See <see cref="ScriptHost.RunAsync"/>.
+    /// </para>
+    /// <para>
+    /// Purpose: solve the CS0104 Office-interop / BCL name collision
+    /// (<c>Range</c>, <c>Exception</c>, <c>Application</c>, <c>Style</c>, …)
+    /// without making every author re-type the alias in every <c>.csx</c>.
+    /// Default = empty. Office plugins (Word/Excel/PowerPoint/Outlook on
+    /// Windows) override to contribute their conventional two-letter alias
+    /// (<c>Wd</c>/<c>Xl</c>/<c>Pp</c>/<c>Ol</c>).
+    /// </para>
+    /// <para>
+    /// We deliberately do NOT try to win the bare-name race — bare
+    /// <c>Range</c> stays ambiguous. The alias only guarantees a reliable
+    /// qualifier (<c>Wd.Range</c>, <c>Xl.Range</c>) is always in scope.
+    /// </para>
+    /// <para>See FR <c>FR_office_script_interop_alias.md</c>.</para>
+    /// </summary>
+    IEnumerable<string> ScriptUsingAliases => Array.Empty<string>();
+
+    /// <summary>
     /// Plugin-specific commands (in addition to the built-in <c>run-script</c>).
     /// Examples: SW <c>checkpoint</c>, Excel <c>dump-sheet</c>.
     /// </summary>
