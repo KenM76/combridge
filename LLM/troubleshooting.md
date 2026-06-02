@@ -20,43 +20,52 @@ But that namespace also defines its own `Exception`, `Application`,
 `Style`, `Action`, `Font`, `Range`, etc. that collide with `System.*`.
 Roslyn refuses to pick one.
 
-**Fix (v0.4.2+ — recommended).** Use the **auto-provided two-letter
-alias** the plugin contributes to your script. No `using ... = ...`
-declaration needed — it's already in scope:
+**Fix.** Declare the conventional two-letter alias at the top of your
+.csx and use the qualified form. The script host detects this exact
+collision and appends a hint with the right line — copy-paste from
+the error to the top of your file:
 
 ```csharp
-Xl.Range used = xlSheet.UsedRange;     // not bare Range
-Wd.Range rng  = wdDoc.Content;
-catch (System.Exception ex) { ... }    // qualify the BCL side
-```
-
-Alias table:
-
-| Plugin       | Auto-alias                                           |
-|--------------|-----------------------------------------------------|
-| `excel`      | `Xl = global::Microsoft.Office.Interop.Excel`      |
-| `word`       | `Wd = global::Microsoft.Office.Interop.Word`       |
-| `powerpoint` | `Pp = global::Microsoft.Office.Interop.PowerPoint` |
-| `outlook`    | `Ol = global::Microsoft.Office.Interop.Outlook`    |
-
-**Fix (older combridge).** Either declare the alias yourself at the
-top of the .csx:
-
-```csharp
+// At the top of any Excel script:
 using Xl = global::Microsoft.Office.Interop.Excel;
+
+// Then use the qualified form:
 Xl.Range used = xlSheet.UsedRange;
+catch (System.Exception ex) { ... }  // qualify the BCL side too
 ```
 
-…or fully-qualify the BCL side every time (`System.Exception`,
-`System.Range`, etc.). See `LLM/scripting.md` § "Office interop
-namespaces shadow common BCL names" for the full collision table.
+Per-plugin alias convention:
 
-**Note: bare `Range` stays ambiguous on purpose.** The auto-alias
-guarantees a reliable qualifier is in scope; it does NOT silently win
-the race against `System.Range`. If you want bare `Range` to mean the
-Office type, add `using Range = Xl.Range;` to your own script.
+| Plugin       | Alias line                                                |
+|--------------|----------------------------------------------------------|
+| `excel`      | `using Xl = global::Microsoft.Office.Interop.Excel;`      |
+| `word`       | `using Wd = global::Microsoft.Office.Interop.Word;`       |
+| `powerpoint` | `using Pp = global::Microsoft.Office.Interop.PowerPoint;` |
+| `outlook`    | `using Ol = global::Microsoft.Office.Interop.Outlook;`    |
 
-See FR `FR_office_script_interop_alias.md` for the design rationale.
+**Skip the typing entirely with `new-script`.** Each Office plugin has
+a `new-script <path>` subcommand that scaffolds a starter .csx with
+the alias line, globals documentation, and an example body already in
+place — edit the body, run it:
+
+```
+combridge excel new-script my_thing.csx
+```
+
+**Note: bare `Range` stays ambiguous on purpose.** The alias gives
+you a reliable qualifier; it does NOT silently win the race against
+`System.Range`. If you want bare `Range` to mean the Office type in
+your specific script, add `using Range = Xl.Range;` after the namespace
+alias.
+
+**Historical note (v0.4.2 only).** v0.4.2 briefly auto-injected the
+alias from the host side. It was withdrawn in v0.5.0 because at scale
+the invisible mechanism caused more pain than it solved: external IDEs
+flagged scripts as broken (no `using` visible), LLMs hallucinated where
+`Xl` came from, app-store auditors couldn't read scripts without
+knowing host internals. See the rejection note in
+`FeatureRequests/ComBridge_FeatureRequests/Rejected/FR_office_script_interop_alias.md`
+for the full reasoning.
 
 ### `error COMBRIDGE001: ... could not locate its required interop assemblies`
 

@@ -4,7 +4,121 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.2] — auto-provided interop aliases for Office scripts
+## [0.5.0] — withdraw v0.4.2 alias preamble; ship visible scaffolding + smart CS0104 hints
+
+**Breaking change** in the plugin contract (justifies the minor-version
+bump): `IComBridgePlugin.ScriptUsingAliases` is REMOVED. Plugins built
+against v0.4.2's contract that relied on the preamble mechanism need to
+be rebuilt against v0.5.0; the four Office plugins shipped in this repo
+are already updated.
+
+### Why withdraw v0.4.2
+
+The v0.4.2 mechanism injected `using Xl = global::Microsoft.Office.Interop.Excel;`
+into the script source before Roslyn compiled it. That solved the CS0104
+papercut, but at app-store scale (thousands of plugins, thousands of
+authors, public script catalog) it broke the source-is-truth contract
+in ways that compound:
+
+- **External IDEs can't see the preamble.** Devs editing .csx files in
+  VS Code, Rider, or Cursor saw red squiggles under `Xl` even though
+  the script ran fine. No IDE knew about combridge's host injection.
+- **LLMs reading the .csx in isolation hallucinated.** They saw `Xl.Range`
+  with no `using Xl = ...` line and tried to "fix" what wasn't broken.
+- **App-store auditors couldn't evaluate published scripts.** Reading
+  the source required knowing host internals. That's a market-friction
+  tax on every install decision.
+- **Roslyn-format fragility.** The line-number remap regex depended on
+  Roslyn's diagnostic format staying stable; a future Roslyn version
+  could silently misreport error locations.
+- **Mechanism attracts mechanism.** "Rewrite the script before compile"
+  is a feature surface that grows. We don't want it.
+
+The doc-fix-alone equivalent left a one-line-per-script onboarding cost.
+v0.5.0 eliminates that cost with two visible tools that don't break the
+source-is-truth contract.
+
+### Added — visible scaffolding (replaces the preamble)
+
+- **`<plugin> new-script <path> [--force]`** — every Windows Office
+  plugin (Excel, Word, PowerPoint, Outlook) now ships a `new-script`
+  subcommand that scaffolds a starter `.csx` with the alias line, a
+  header comment documenting the available globals, and a minimal
+  example body. Edit the body, run it. The alias declaration lives in
+  the file the author owns — every reader (IDE, LLM, auditor, future
+  maintainer) sees exactly what's in scope.
+- **`ScriptScaffold.WriteTemplate`** in `ComBridge.Core` — shared
+  helper that all `new-script` commands delegate to. Parses `<path>
+  [--force]`, refuses to overwrite without `--force`, writes the
+  template, reports the result with a "now run it with:" hint. Future
+  plugins (Visio, AutoCAD, Inventor, etc.) get scaffolding by
+  delegating one line and supplying their template constant.
+
+### Added — smart CS0104 hints (replaces the line-number remap)
+
+- **`AugmentOfficeDiagnostic`** in `ScriptHost` — when Roslyn produces
+  a CS0104 ambiguous-reference error for an Office-interop / BCL
+  collision, the host detects the pattern and appends a one-line hint
+  with the exact `using` to add and the qualified form to use:
+
+  ```
+  collision_test.csx(2,1): error CS0104: 'Range' is an ambiguous reference between 'Microsoft.Office.Interop.Word.Range' and 'System.Range'
+    -> Hint: add this to the top of your script:
+           using Wd = global::Microsoft.Office.Interop.Word;
+         then use 'Wd.Range' instead of bare 'Range',
+         or qualify the BCL side as 'System.Range'.
+         See LLM/scripting.md for the full collision table.
+  ```
+
+  Purely additive — the original diagnostic, including its
+  `(line,col)` span, is preserved verbatim. No rewriting, no
+  remapping.
+
+### Removed
+
+- `IComBridgePlugin.ScriptUsingAliases` contract member
+- `ScriptHost`'s preamble injection (`using Xl = ...; ` prepended to
+  script source)
+- `ScriptHost.DetectEncoding` (no longer needed — Roslyn's
+  `File.OpenRead` overload handles encoding)
+- `ScriptHost.RemapDiagnosticLine` + `DiagLocRx` (no preamble means
+  Roslyn's reported line numbers already match the author's source)
+- `ScriptUsingAliases` overrides on the four Windows Office plugins
+
+### Verified
+
+- All four Office plugins' `new-script` writes a valid starter that
+  COMPILES AND RUNS on its own. Excel scaffold ran live against an
+  open workbook and printed sheet stats.
+- Refuse-to-overwrite (exit code 1) works; `--force` overwrites
+  cleanly; missing-directory case (exit code 2) reports clearly.
+- CS0104 hint augmentation: a Word .csx with bare `Range r;` now
+  reports the original error PLUS the actionable hint, with the
+  author's actual line `(2,1)` preserved (no remap needed).
+- Non-CS0104 errors pass through unchanged — only Office-interop /
+  BCL collisions are augmented.
+
+### Docs
+- `LLM/scripting.md` § Office namespace shadowing rewritten:
+  leads with the explicit `using Xl = ...` pattern (the recommended
+  convention), documents `new-script` as the zero-typing workflow,
+  describes the CS0104 hint as the recovery path. Includes a candid
+  paragraph on why v0.4.2 was withdrawn — the source-is-truth contract
+  matters more than saving the author one line.
+- `LLM/troubleshooting.md` CS0104 entry updated to lead with the
+  alias-declaration fix and the `new-script` shortcut. Historical note
+  references the rejected FR.
+- `FR_office_script_interop_alias.md` moved to
+  `Rejected/` with the rejection rationale stamped on top.
+- `FR_scripting_dx_and_outlook_search.md` moved to `Complete/`.
+
+## [0.4.2] — auto-provided interop aliases for Office scripts (WITHDRAWN in v0.5.0)
+
+**This release was withdrawn.** See v0.5.0 above for the reasoning and
+the visible-scaffolding replacement. The release tag/notes remain on
+GitHub for history; do not depend on the API surface that shipped here.
+
+
 
 Addresses `D:\Dev\FeatureRequests\ComBridge_FeatureRequests\FR_office_script_interop_alias.md`
 in full. Implements the FR's primary proposal (option **b** —

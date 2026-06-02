@@ -76,67 +76,80 @@ Windows), the plugin's `ScriptUsings` imports the interop namespace, so
 unqualified references become ambiguous.
 
 `Range` is the worst offender because modern C# added `System.Range` (for
-`x[1..3]` slicing), so even the single most common Office idiom —
-`Range used = xlSheet.UsedRange;` — fails to compile with CS0104.
+`x[1..3]` slicing), so even the common idiom
+`Range used = xlSheet.UsedRange;` fails to compile with CS0104.
 
-### ✓ Two-letter alias (auto-provided, v0.4.2+) — the recommended pattern
+### ✓ Recommended pattern: declare a two-letter alias at the top of every Office script
 
-The four Windows Office plugins auto-contribute a conventional two-letter
-alias for their interop namespace, prepended to your script source before
-compile. You can write the qualified form **without declaring the alias
-yourself**:
+The convention is to alias the interop namespace to a two-letter name
+(`Xl`/`Wd`/`Pp`/`Ol`), use the qualified form for Office types, and
+fully-qualify the BCL side where needed:
 
-| Plugin | Auto-provided alias | Use as |
+| Plugin | Conventional alias | Use as |
 |---|---|---|
-| `excel`      | `Xl = global::Microsoft.Office.Interop.Excel`      | `Xl.Range used = ws.UsedRange;` |
-| `word`       | `Wd = global::Microsoft.Office.Interop.Word`       | `Wd.Range rng = wdDoc.Content;` |
-| `powerpoint` | `Pp = global::Microsoft.Office.Interop.PowerPoint` | `Pp.Shape sh = slide.Shapes[1];` |
-| `outlook`    | `Ol = global::Microsoft.Office.Interop.Outlook`    | `Ol.MailItem msg = (Ol.MailItem)item;` |
+| `excel`      | `using Xl = global::Microsoft.Office.Interop.Excel;`      | `Xl.Range used = ws.UsedRange;` |
+| `word`       | `using Wd = global::Microsoft.Office.Interop.Word;`       | `Wd.Range rng = wdDoc.Content;` |
+| `powerpoint` | `using Pp = global::Microsoft.Office.Interop.PowerPoint;` | `Pp.Shape sh = slide.Shapes[1];` |
+| `outlook`    | `using Ol = global::Microsoft.Office.Interop.Outlook;`    | `Ol.MailItem msg = (Ol.MailItem)item;` |
 
 ```csharp
-// ✓ works in v0.4.2+ — no `using Xl = ...;` needed
+// At the top of any Excel .csx:
+using Xl = global::Microsoft.Office.Interop.Excel;
+
+// Then use the qualified form:
 Xl.Range used = xlSheet.UsedRange;
 foreach (Xl.Range row in used.Rows) { /* ... */ }
 catch (System.Exception ex) { Console.WriteLine(ex.Message); }
 ```
 
-Note that **bare `Range` is still ambiguous** — this is deliberate. The
-alias only guarantees a reliable qualifier (`Xl.Range`) is always in scope;
-it does NOT try to silently pick the Office type over `System.Range`.
+**Why explicit declaration, not host injection?** v0.4.2 briefly shipped
+an "auto-provided alias" mechanism where the host injected the
+`using` line behind the author's back. It was withdrawn in v0.5.0
+because at app-store scale the invisible-mechanism cost dominated:
+external IDEs (VS Code, Rider, Cursor) couldn't see the injected line and
+flagged the script as broken; LLMs reading the .csx in isolation
+hallucinated where `Xl` came from; auditors couldn't evaluate a
+published app without learning host internals. The script source must
+be the truth — every reader sees exactly what runs. See the rejection
+note in
+`D:\Dev\FeatureRequests\ComBridge_FeatureRequests\Rejected\FR_office_script_interop_alias.md`
+for the full reasoning.
 
-#### Mechanics (only matters if you're debugging a weird error)
+### How to skip the one-line typing cost
 
-The host prepends `using Xl = global::Microsoft.Office.Interop.Excel; ` to
-the script source as a one-line preamble before passing it to Roslyn.
-Compile-error line/column numbers are remapped back to the author's real
-source — a CS0104 reported at "line 168" of the compiled source surfaces as
-line 167 of your .csx, matching what you'd see in an editor.
+Two complementary tools reduce the "type the alias every time" friction
+to zero while keeping the source explicit:
 
-If you need to inspect the preamble or contribute one from your own
-plugin, see `IComBridgePlugin.ScriptUsingAliases` in
-`src/ComBridge.Core/IComBridgePlugin.cs`.
+1. **`combridge <plugin> new-script <path>`** scaffolds a starter .csx
+   with the alias line, the available globals documented in the header
+   comment, and a minimal example body. Edit the body, run it. The
+   alias declaration is right there in the file — visible to you, your
+   IDE, GitHub, LLMs, and the app store.
 
-### Fallback: fully-qualify the BCL type
+   ```
+   combridge excel      new-script my_thing.csx
+   combridge word       new-script my_thing.csx
+   combridge powerpoint new-script my_thing.csx
+   combridge outlook    new-script my_thing.csx
+   ```
 
-If you'd rather not use the alias (or you're on a combridge older than
-v0.4.2), fully-qualify the BCL side instead:
+2. **Smart CS0104 hints.** If you forget the alias and hit
+   `error CS0104: 'Range' is an ambiguous reference between ...`, the
+   script host appends a one-line hint with the exact `using` to add
+   and the qualified form to use. So even the "I forgot" path is one
+   copy-paste from working.
 
-```csharp
-// ❌ fails in any Outlook .csx with:
-//   error CS0104: 'Exception' is an ambiguous reference between
-//   'Microsoft.Office.Interop.Outlook.Exception' and 'System.Exception'
-try { ... }
-catch (Exception ex) { Console.WriteLine(ex.Message); }
+### Bare `Range` / `Exception` stays ambiguous — deliberately
 
-// ✓ works — fully qualify the BCL type
-try { ... }
-catch (System.Exception ex) { Console.WriteLine(ex.Message); }
-```
+The alias gives you a reliable qualifier (`Xl.Range`); it does NOT
+silently win the race against `System.Range`. If you want bare `Range`
+to mean the Office type in your specific .csx, add
+`using Range = Xl.Range;` yourself. Combridge won't make that choice
+for you.
 
-Common collisions to fully-qualify (or use the auto-provided alias on the
-Office side):
+### Collision table
 
-| BCL type | Use as | Or |
+| BCL type | Use as | Or qualify Office-side |
 |---|---|---|
 | `Range` (modern C# slicing) | `System.Range` | `Xl.Range` / `Wd.Range` |
 | `Exception` | `System.Exception` | `Ol.Exception` (rarely what you want) |

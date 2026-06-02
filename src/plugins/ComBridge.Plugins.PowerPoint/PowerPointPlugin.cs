@@ -54,21 +54,10 @@ public sealed class PowerPointPlugin : IComBridgePlugin
 
     public IEnumerable<string> ScriptUsings => new[] { "Microsoft.Office.Interop.PowerPoint" };
 
-    /// <summary>
-    /// Auto-provide the conventional two-letter alias for the PowerPoint
-    /// interop namespace so user .csx files can write
-    /// <c>Pp.Shape sh = slide.Shapes[1];</c> without re-declaring
-    /// <c>using Pp = global::Microsoft.Office.Interop.PowerPoint;</c> at the
-    /// top of every script. See FR_office_script_interop_alias.md.
-    /// </summary>
-    public IEnumerable<string> ScriptUsingAliases => new[]
-    {
-        "Pp = global::Microsoft.Office.Interop.PowerPoint",
-    };
-
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new PptInfoCommand(),
+        new PptNewScriptCommand(),
     };
 
     // PowerPoint per-presentation file monikers in the ROT.
@@ -140,4 +129,46 @@ internal sealed class PptInfoCommand : IBridgeCommand
         catch { output.WriteLine("ActiveSlide:        (unavailable)"); }
         return Task.FromResult(0);
     }
+}
+
+/// <summary>
+/// <c>powerpoint new-script &lt;path&gt; [--force]</c> — scaffolds a starter
+/// <c>.csx</c> showing the conventional PowerPoint-interop alias pattern
+/// and the available globals (pptApp / pptPres / pptSlide). See ScriptScaffold
+/// for the rationale; see CHANGELOG v0.5.0 for the design context.
+/// </summary>
+internal sealed class PptNewScriptCommand : IBridgeCommand
+{
+    public string Name => "new-script";
+    public string Usage => "new-script <path> [--force]   (scaffolds a starter .csx with the Pp alias + a minimal example)";
+
+    private const string Template =
+@"// <NAME> — PowerPoint script for combridge.
+//
+// Globals provided by ComBridge.Plugins.PowerPoint:
+//   pptApp   : PowerPoint._Application — the running PowerPoint instance
+//   pptPres  : PowerPoint.Presentation? — active presentation (null if none open)
+//   pptSlide : PowerPoint.Slide?        — active slide (null if no slide selected)
+//
+// Office interop namespaces collide with several BCL types (Range, Exception,
+// Application, Style, Font, Action, Page). The recommended convention is to
+// alias the interop namespace to a two-letter name (`Pp` for PowerPoint) and
+// use the qualified form for Office types, fully-qualifying the BCL side as
+// needed. See LLM/scripting.md for the full collision table.
+using Pp = global::Microsoft.Office.Interop.PowerPoint;
+
+if (pptPres is null) {
+    Console.WriteLine(""ERROR: no presentation open in PowerPoint."");
+    return 1;
+}
+
+Console.WriteLine($""Presentation: {pptPres.Name}"");
+Console.WriteLine($""Slides:       {pptPres.Slides.Count}"");
+Console.WriteLine($""Active slide: {pptSlide?.SlideNumber.ToString() ?? ""(none)""}"");
+
+return 0;
+";
+
+    public Task<int> RunAsync(object comRoot, string[] args, TextWriter output)
+        => ScriptScaffold.WriteTemplate(args, output, Template, Name, Usage);
 }

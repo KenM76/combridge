@@ -51,22 +51,11 @@ public sealed class OutlookPlugin : IComBridgePlugin
 
     public IEnumerable<string> ScriptUsings => new[] { "Microsoft.Office.Interop.Outlook" };
 
-    /// <summary>
-    /// Auto-provide the conventional two-letter alias for the Outlook
-    /// interop namespace so user .csx files can write
-    /// <c>Ol.MailItem msg = item as Ol.MailItem;</c> without re-declaring
-    /// <c>using Ol = global::Microsoft.Office.Interop.Outlook;</c> at the
-    /// top of every script. See FR_office_script_interop_alias.md.
-    /// </summary>
-    public IEnumerable<string> ScriptUsingAliases => new[]
-    {
-        "Ol = global::Microsoft.Office.Interop.Outlook",
-    };
-
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new OlInfoCommand(),
         new OlSearchCommand(),
+        new OlNewScriptCommand(),
     };
 
     // Outlook has no per-document moniker concept (it's a MAPI session, not
@@ -413,4 +402,47 @@ internal sealed class OlInfoCommand : IBridgeCommand
 
         return Task.FromResult(0);
     }
+}
+
+/// <summary>
+/// <c>outlook new-script &lt;path&gt; [--force]</c> — scaffolds a starter
+/// <c>.csx</c> showing the conventional Outlook-interop alias pattern and
+/// the available globals (olApp / olNs / olExplorer). See ScriptScaffold for
+/// the rationale; see CHANGELOG v0.5.0 for the design context.
+/// </summary>
+internal sealed class OlNewScriptCommand : IBridgeCommand
+{
+    public string Name => "new-script";
+    public string Usage => "new-script <path> [--force]   (scaffolds a starter .csx with the Ol alias + a minimal example)";
+
+    private const string Template =
+@"// <NAME> — Outlook script for combridge.
+//
+// Globals provided by ComBridge.Plugins.Outlook:
+//   olApp      : Outlook._Application  — the running Outlook instance
+//   olNs       : Outlook.NameSpace?    — MAPI namespace (null if no session)
+//   olExplorer : Outlook.Explorer?     — currently-focused explorer window
+//
+// Office interop namespaces collide with several BCL types (Range, Exception,
+// Application, Style, Font, Action, Page). The recommended convention is to
+// alias the interop namespace to a two-letter name (`Ol` for Outlook) and
+// use the qualified form for Office types, fully-qualifying the BCL side as
+// needed. See LLM/scripting.md for the full collision table.
+using Ol = global::Microsoft.Office.Interop.Outlook;
+
+if (olNs is null) {
+    Console.WriteLine(""ERROR: no MAPI session — open Outlook fully and try again."");
+    return 1;
+}
+
+Ol.MAPIFolder inbox = olNs.GetDefaultFolder(Ol.OlDefaultFolders.olFolderInbox);
+Console.WriteLine($""Default inbox: {inbox.Name}"");
+Console.WriteLine($""Total items:   {inbox.Items.Count}"");
+Console.WriteLine($""Unread items:  {inbox.UnReadItemCount}"");
+
+return 0;
+";
+
+    public Task<int> RunAsync(object comRoot, string[] args, TextWriter output)
+        => ScriptScaffold.WriteTemplate(args, output, Template, Name, Usage);
 }

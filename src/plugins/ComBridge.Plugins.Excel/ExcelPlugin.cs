@@ -103,21 +103,11 @@ public sealed class ExcelPlugin : IComBridgePlugin
         "Microsoft.Office.Interop.Excel",
     };
 
-    /// <summary>
-    /// Auto-provide the conventional two-letter alias for the Excel interop
-    /// namespace so user .csx files can write <c>Xl.Range used = ws.UsedRange;</c>
-    /// without re-declaring <c>using Xl = global::Microsoft.Office.Interop.Excel;</c>
-    /// at the top of every script. See FR_office_script_interop_alias.md.
-    /// </summary>
-    public IEnumerable<string> ScriptUsingAliases => new[]
-    {
-        "Xl = global::Microsoft.Office.Interop.Excel",
-    };
-
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new InfoCommand(),
         new DumpSheetCommand(),
+        new NewScriptCommand(),
     };
 
     /// <summary>
@@ -215,4 +205,60 @@ internal sealed class DumpSheetCommand : IBridgeCommand
         }
         return Task.FromResult(0);
     }
+}
+
+/// <summary>
+/// <c>excel new-script &lt;path&gt; [--force]</c> — scaffolds a starter <c>.csx</c>
+/// at <c>&lt;path&gt;</c> showing the conventional Excel-interop alias pattern,
+/// the available globals, and a minimal example body the author edits.
+/// <para>
+/// Replaces the v0.4.2 host-side preamble mechanism (ScriptUsingAliases) that
+/// was withdrawn in v0.5.0. The scaffold gives authors the same zero-typing
+/// onboarding while preserving the source-is-truth contract: the <c>.csx</c>
+/// the host compiles is exactly the file the author (and any IDE, LLM, or
+/// app-store auditor) can read.
+/// </para>
+/// </summary>
+internal sealed class NewScriptCommand : IBridgeCommand
+{
+    public string Name => "new-script";
+    public string Usage => "new-script <path> [--force]   (scaffolds a starter .csx with the Xl alias + a minimal example)";
+
+    private const string Template =
+@"// <NAME> — Excel script for combridge.
+//
+// Globals provided by ComBridge.Plugins.Excel:
+//   xlApp   : Excel._Application — the running Excel instance
+//   xlBook  : Excel.Workbook?    — active workbook (null if none open)
+//   xlSheet : Excel.Worksheet?   — active worksheet (null if a Chart is active)
+//
+// Office interop namespaces collide with several BCL types (Range, Exception,
+// Application, Style, Font, Action, Page). The recommended convention is to
+// alias the interop namespace to a two-letter name (`Xl` for Excel), use the
+// qualified form for Office types, and fully-qualify the BCL side as needed.
+// This single line is the entire ergonomic fix — every reader of this script
+// (you, your IDE, an LLM, an app-store reviewer) can see exactly what's in
+// scope without consulting host docs. See LLM/scripting.md for the full
+// collision table.
+using Xl = global::Microsoft.Office.Interop.Excel;
+
+if (xlBook is null) {
+    Console.WriteLine(""ERROR: no workbook open in Excel."");
+    return 1;
+}
+
+Console.WriteLine($""Active workbook: {xlBook.Name}"");
+Console.WriteLine($""Active sheet:    {xlSheet?.Name ?? ""(none)""}"");
+
+// Example: report the dimensions of the used range on the active sheet.
+Xl.Range used = xlSheet?.UsedRange;
+if (used is not null) {
+    Console.WriteLine($""Used range:  {used.Rows.Count} rows x {used.Columns.Count} cols"");
+}
+
+return 0;
+";
+
+    public Task<int> RunAsync(object comRoot, string[] args, TextWriter output)
+        => ScriptScaffold.WriteTemplate(args, output, Template, Name, Usage);
 }

@@ -45,20 +45,10 @@ public sealed class WordPlugin : IComBridgePlugin
 
     public IEnumerable<string> ScriptUsings => new[] { "Microsoft.Office.Interop.Word" };
 
-    /// <summary>
-    /// Auto-provide the conventional two-letter alias for the Word interop
-    /// namespace so user .csx files can write <c>Wd.Range rng = wdDoc.Content;</c>
-    /// without re-declaring <c>using Wd = global::Microsoft.Office.Interop.Word;</c>
-    /// at the top of every script. See FR_office_script_interop_alias.md.
-    /// </summary>
-    public IEnumerable<string> ScriptUsingAliases => new[]
-    {
-        "Wd = global::Microsoft.Office.Interop.Word",
-    };
-
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new WdInfoCommand(),
+        new WdNewScriptCommand(),
     };
 
     // Word registers per-document file monikers in the ROT, same as Excel.
@@ -139,4 +129,47 @@ internal sealed class WdInfoCommand : IBridgeCommand
         try { output.WriteLine($"Documents:     {app.Documents.Count}"); } catch { }
         return Task.FromResult(0);
     }
+}
+
+/// <summary>
+/// <c>word new-script &lt;path&gt; [--force]</c> — scaffolds a starter <c>.csx</c>
+/// at <c>&lt;path&gt;</c> showing the conventional Word-interop alias pattern
+/// and the available globals (wdApp / wdDoc). See ScriptScaffold for the
+/// rationale; see CHANGELOG v0.5.0 for the design context.
+/// </summary>
+internal sealed class WdNewScriptCommand : IBridgeCommand
+{
+    public string Name => "new-script";
+    public string Usage => "new-script <path> [--force]   (scaffolds a starter .csx with the Wd alias + a minimal example)";
+
+    private const string Template =
+@"// <NAME> — Word script for combridge.
+//
+// Globals provided by ComBridge.Plugins.Word:
+//   wdApp : Word._Application — the running Word instance
+//   wdDoc : Word.Document?    — active document (null if none open)
+//
+// Office interop namespaces collide with several BCL types (Range, Exception,
+// Application, Style, Font, Action, Page). The recommended convention is to
+// alias the interop namespace to a two-letter name (`Wd` for Word) and use
+// the qualified form for Office types, fully-qualifying the BCL side as
+// needed. See LLM/scripting.md for the full collision table.
+using Wd = global::Microsoft.Office.Interop.Word;
+
+if (wdDoc is null) {
+    Console.WriteLine(""ERROR: no document open in Word."");
+    return 1;
+}
+
+Console.WriteLine($""Document: {wdDoc.Name}"");
+
+Wd.Range content = wdDoc.Content;
+Console.WriteLine($""Length:   {content.End - content.Start} chars"");
+Console.WriteLine($""Words:    {wdDoc.Words.Count}"");
+
+return 0;
+";
+
+    public Task<int> RunAsync(object comRoot, string[] args, TextWriter output)
+        => ScriptScaffold.WriteTemplate(args, output, Template, Name, Usage);
 }

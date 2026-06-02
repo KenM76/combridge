@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
@@ -138,41 +137,21 @@ public static class ScriptHost
             loader.RegisterDependency(plugin.GetType().Assembly);
             loader.RegisterDependency(plugin.GlobalsType.Assembly);
 
-            // Build the alias preamble (FR_office_script_interop_alias.md).
-            // Each plugin-contributed alias is rendered as `using <alias>; `
-            // and the whole set is concatenated onto a SINGLE first line so
-            // line-number offsetting is exactly 1 (the script body's line 1
-            // becomes compiled line 2). If a plugin contributes nothing, the
-            // preamble is empty and there's zero behavior change.
-            var aliases = plugin.ScriptUsingAliases?.ToList() ?? new List<string>();
-            string preamble = aliases.Count == 0
-                ? ""
-                : string.Concat(aliases.Select(a => $"using {a}; ")) + "\n";
-            int preambleLineOffset = preamble.Length == 0 ? 0 : 1;
-
-            // To keep PDB emit happy (CS8055 needs explicit encoding), we
-            // build a MemoryStream that preserves the source file's BOM (if
-            // any) and uses the matching encoding for the preamble bytes.
-            // Without this, mixing UTF-8-BOM script content with default-
-            // encoded preamble would corrupt non-ASCII characters in the body.
-            byte[] scriptBytes = File.ReadAllBytes(scriptPath);
-            (Encoding enc, int bomLen) = DetectEncoding(scriptBytes);
-            using var ms = new MemoryStream(bomLen + preamble.Length * 2 + scriptBytes.Length);
-            if (bomLen > 0) ms.Write(scriptBytes, 0, bomLen);
-            if (preamble.Length > 0)
-            {
-                byte[] preBytes = enc.GetBytes(preamble);
-                ms.Write(preBytes, 0, preBytes.Length);
-            }
-            ms.Write(scriptBytes, bomLen, scriptBytes.Length - bomLen);
-            ms.Position = 0;
-
-            var script = CSharpScript.Create(ms, options, plugin.GlobalsType, loader);
+            // Source-is-truth contract: the script file's bytes ARE what
+            // Roslyn compiles. We never rewrite, prepend, or otherwise mutate
+            // the source the author wrote — every reader (IDE, LLM, audit
+            // tool, GitHub diff) sees exactly the code that ran. The
+            // alternative (an injected preamble) was implemented in v0.4.2
+            // and removed in v0.5.0; see CHANGELOG and the rejection note in
+            // FR_office_script_interop_alias.md for the reasoning at
+            // app-store scale.
+            using var scriptStream = File.OpenRead(scriptPath);
+            var script = CSharpScript.Create(scriptStream, options, plugin.GlobalsType, loader);
             var diags = script.Compile();
             var errors = diags.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
             if (errors.Count > 0)
             {
-                foreach (var d in errors) output.WriteLine(RemapDiagnosticLine(d.ToString(), preambleLineOffset));
+                foreach (var d in errors) output.WriteLine(AugmentOfficeDiagnostic(d.ToString()));
                 return 3;
             }
             var state = await script.RunAsync(globals);
@@ -201,48 +180,56 @@ public static class ScriptHost
     }
 
     /// <summary>
-    /// Detect the encoding + BOM length of raw source bytes. Default is
-    /// UTF-8 without BOM (Roslyn's expectation for the streaming overload).
+    /// Office-interop CS0104 collision pattern. Matches diagnostics like
+    /// <c>error CS0104: 'Range' is an ambiguous reference between
+    /// 'Microsoft.Office.Interop.Word.Range' and 'System.Range'</c> so we
+    /// can append an actionable hint pointing at the conventional alias fix.
     /// </summary>
-    private static (Encoding enc, int bomLen) DetectEncoding(byte[] bytes)
-    {
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-            return (new UTF8Encoding(true), 3);
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-            return (Encoding.Unicode, 2);     // UTF-16 LE
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return (Encoding.BigEndianUnicode, 2);  // UTF-16 BE
-        if (bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0xFE && bytes[3] == 0xFF)
-            return (Encoding.UTF32, 4);
-        return (new UTF8Encoding(false), 0);
-    }
-
-    /// <summary>
-    /// Rewrite Roslyn diagnostic strings so reported line numbers point at
-    /// the author's real source. Diagnostic text format is:
-    /// <c>&lt;path&gt;(LINE,COL): severity ID: message</c> — we capture
-    /// <c>(LINE,COL)</c> and subtract the preamble offset from LINE.
-    /// <para>
-    /// If the offending span is actually inside the injected preamble
-    /// (which would be a bug in the plugin's alias declaration, not the
-    /// author's script), we leave the line number alone so the bug is
-    /// visible rather than presenting as "your script line 0" gibberish.
-    /// </para>
-    /// </summary>
-    private static readonly Regex DiagLocRx = new(
-        @"\((?<line>\d+),(?<col>\d+)\)",
+    private static readonly Regex OfficeCs0104Rx = new(
+        @"error CS0104: '(?<name>\w+)' is an ambiguous reference between '(?<office>Microsoft\.Office\.Interop\.(?<app>Word|Excel|PowerPoint|Outlook))\.\w+' and 'System\.\w+'",
         RegexOptions.Compiled);
 
-    private static string RemapDiagnosticLine(string diagText, int preambleLineOffset)
+    /// <summary>
+    /// Conventional two-letter alias per Office app. These are the same
+    /// short names used throughout LLM/scripting.md and the per-plugin
+    /// new-script templates, so the hint we emit lines up with the docs.
+    /// </summary>
+    private static readonly Dictionary<string, string> OfficeAliasSuggestions = new(StringComparer.Ordinal)
     {
-        if (preambleLineOffset == 0) return diagText;
-        return DiagLocRx.Replace(diagText, m =>
-        {
-            int reportedLine = int.Parse(m.Groups["line"].Value);
-            int col = int.Parse(m.Groups["col"].Value);
-            int realLine = reportedLine - preambleLineOffset;
-            if (realLine < 1) return m.Value;  // preamble-side error — leave as-is
-            return $"({realLine},{col})";
-        });
+        ["Word"]       = "Wd",
+        ["Excel"]      = "Xl",
+        ["PowerPoint"] = "Pp",
+        ["Outlook"]    = "Ol",
+    };
+
+    /// <summary>
+    /// If the diagnostic is a CS0104 Office-interop / BCL collision, append
+    /// a short actionable hint to the error text pointing at the alias-
+    /// declaration fix. The original diagnostic text — including its
+    /// <c>(line,col)</c> span — is preserved verbatim; we only ADD a
+    /// trailing hint line. Other diagnostics pass through unchanged.
+    /// <para>
+    /// This is the v0.5.0 replacement for the v0.4.2 ScriptUsingAliases
+    /// preamble mechanism. Augmenting the error message keeps the script's
+    /// source-is-truth contract intact (no host-side rewriting) while still
+    /// turning a generic CS0104 into a one-step fix the author can apply
+    /// without leaving their editor.
+    /// </para>
+    /// </summary>
+    private static string AugmentOfficeDiagnostic(string diagText)
+    {
+        var m = OfficeCs0104Rx.Match(diagText);
+        if (!m.Success) return diagText;
+        string app = m.Groups["app"].Value;
+        string name = m.Groups["name"].Value;
+        string office = m.Groups["office"].Value;
+        if (!OfficeAliasSuggestions.TryGetValue(app, out var alias))
+            return diagText;
+        return diagText
+            + $"\n  -> Hint: add this to the top of your script:"
+            + $"\n         using {alias} = global::{office};"
+            + $"\n       then use '{alias}.{name}' instead of bare '{name}',"
+            + $"\n       or qualify the BCL side as 'System.{name}'."
+            + $"\n       See LLM/scripting.md for the full collision table.";
     }
 }
