@@ -75,6 +75,7 @@ public sealed class ExcelMacPlugin : IComBridgePlugin
     {
         new ExcelMacInfoCommand(),
         new ExcelMacDumpSheetCommand(),
+        new ExcelMacListAddinsCommand(),
     };
 
     /// <summary>

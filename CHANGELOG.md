@@ -4,6 +4,126 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — `list-addins` across every plugin (universal diagnostic command)
+
+Adds a new `list-addins` subcommand to every plugin: Excel, Word,
+PowerPoint, Outlook, SolidWorks (Windows) plus best-effort Excel.Mac and
+Word.Mac via AppleScript. Same diagnostic category as `list-sessions` /
+`info` — universal infrastructure, machine-parsable TSV output, no
+business logic baked in.
+
+### Why this exists
+
+"Is the Toolbox add-in actually loaded?" / "What COM add-ins is this
+Excel instance running?" / "Did Acrobat PDFMaker install correctly?"
+These are recurring diagnostic questions every consumer of an Office or
+SolidWorks plugin asks. Today each consumer has to write 10-30 lines of
+COM/registry enumeration in a `.csx` to answer them — each app has its
+own non-obvious enumeration model (COMAddIns + AddIns split in Office,
+dual registry tree + per-version hidden tree in SolidWorks, etc.).
+Shipping it as a built-in turns N rediscoveries into one canonical
+answer with a stable output shape.
+
+### Output shape (TSV, consistent across plugins)
+
+```
+# columns: name<TAB>id<TAB>loaded<TAB>kind<TAB>description
+<name>\t<id>\t<true|false>\t<COM|XLL|VBA|WLL|TEMPLATE|NATIVE>\t<extra>
+...
+# total: <N>
+```
+
+Header rows are prefixed with `#` for easy grep/awk filtering. Tabs/
+newlines inside any field are replaced with spaces so consumers can
+split on `\t` without escape handling.
+
+### Per-plugin coverage
+
+| Plugin | Enumeration source | Notes |
+|---|---|---|
+| `excel` | `Application.COMAddIns` + `Application.AddIns` | Both COM/VSTO and XLL/.xla/.xlam in one stream. Each collection wrapped in its own try/catch so a partial failure (security policy denying one collection) still emits the other. |
+| `word` | `Application.COMAddIns` + `Application.AddIns` | COM + global templates (.dot/.dotm) + WLLs. |
+| `powerpoint` | `Application.COMAddIns` + `Application.AddIns` | COM + .ppam/.ppa. Uses `MsoTriState` for the loaded flag (PowerPoint distinguishes registered-but-not-loaded from loaded-this-session). |
+| `outlook` | `Application.COMAddIns` only | No equivalent classic-addin collection. Newer security-hardened deployments may restrict access — emits a WARN row rather than failing. |
+| `solidworks` | Registry walk + `ISldWorks.GetAddInObject(Clsid)` | See below — substantially more complex than the Office model. |
+| `excel.mac` | AppleScript `addins of application` | Best-effort, strict subset of Windows (no COMAddIns, no XLL on macOS). Same TSV column shape so cross-OS ScripTree apps work. |
+| `word.mac` | AppleScript `add-ins of application` | Same as Excel.Mac: subset of Windows. |
+| `powerpoint.mac` / `outlook.mac` | — | Not shipped. PowerPoint/Outlook for Mac's AppleScript dictionaries don't expose addin collections. Could be added if a use case appears. |
+
+### SolidWorks `list-addins` — the interesting one
+
+SW has no first-class `GetAddIns()` API. The canonical answer is a
+dual registry walk plus per-add-in probes, fully documented in
+`C:\personal_rag\solidworks\lesson_20260529_sw_addin_dual_registry.md`.
+The implementation honors every finding from that lesson:
+
+- **Two HKLM trees walked**: `HKLM\SOFTWARE\SolidWorks\AddIns\{guid}`
+  (UI-visible, the ones Tools → Add-Ins shows) AND
+  `HKLM\SOFTWARE\SolidWorks\SOLIDWORKS <ver>\Addins\{guid}` (hidden
+  product-feature add-ins: Design Checker, Costing, TolAnalyst,
+  Sustainability, Reveng/ScanTo3D, etc.). We auto-discover every
+  installed SW version's hidden tree so multi-version installs surface
+  every version's set with version-tagged scope.
+- **Per-user enabled-at-startup state** lives at
+  `HKCU\Software\SolidWorks\AddInsStartup\{guid}\(Default)` REG_DWORD
+  (NOT under the AddIns key — common mistake an earlier draft of this
+  code made). Missing key = effectively disabled.
+- **Currently-loaded probe** via `ISldWorks.GetAddInObject(Clsid)`. The
+  canonical RAG (`sldworks_methods_v3_llm.rag:82`) confirms the
+  parameter is the CLSID, not the ProgID — a different gotcha the
+  first draft hit. Returns the live IDispatch when loaded, null
+  otherwise. Tolerated per-add-in try/catch for 3rd-party addins that
+  throw on the probe.
+- **DLL path resolution** handles the .NET-hosted `mscoree.dll` →
+  `CodeBase` URL indirection automatically. Most modern SW add-ins
+  (and all 3rd-party managed ones) hit this path; the column shows
+  the actual assembly path, not "mscoree.dll".
+- **Friendly name** comes from `HKCR\CLSID\{guid}\(Default)` (the
+  COM-registered class name like "SWDesignCheck Class"), NOT from the
+  HKLM AddIns subkey. Same source the SW Tools → Add-Ins UI reads.
+- **Case-insensitive CLSID dedup** across hives — registry GUID casing
+  varies between HKLM and HKCU.
+
+Live-verified on the dev machine: enumerated 25 addins total — 9
+UI-visible (Composer, OpenToolbox.Addin, SwClaudeAddinPro, 3DExpExchange,
+etc.), 11 hidden:2026 matching the exact set listed in the lesson
+(Autotrace/Picture2Sketch, Aura, AutoDrawings, CircuitWorks, Costing/
+SwcAddin, PartReviewer, Sustainability/swgApp, Design Checker/
+SWDesignCheck, TolAnalyst, Reveng/ScanTo3D, sldxps), plus 5 hkcu-only
+including FuncFeatApp lazy-loaded into the live session (matched the
+lesson's prediction about MacroFeature-triggered lazy loading).
+
+Not enumerable: the ~4 modules hardcoded into `SLDWORKS.EXE` itself
+(`fworks.dll`/FeatureWorks, `swbrowser.dll`/Toolbox Browser, etc.).
+They appear in neither registry tree and can't be toggled. The output's
+trailing `# total:` line notes this explicitly so consumers don't think
+their machine is missing entries.
+
+### Files added
+- `src/plugins/ComBridge.Plugins.Excel/ListAddinsCommand.cs`
+- `src/plugins/ComBridge.Plugins.Word/ListAddinsCommand.cs`
+- `src/plugins/ComBridge.Plugins.PowerPoint/ListAddinsCommand.cs`
+- `src/plugins/ComBridge.Plugins.Outlook/ListAddinsCommand.cs`
+- `src/plugins/ComBridge.Plugins.SolidWorks/ListAddinsCommand.cs`
+- `src/plugins/ComBridge.Plugins.Excel.Mac/ListAddinsCommand.cs`
+- `src/plugins/ComBridge.Plugins.Word.Mac/ListAddinsCommand.cs`
+
+Each plugin's main `*.Plugin.cs` adds the new command to its `Commands`
+collection. No contract changes; no breaking changes.
+
+### Verified
+- `excel list-addins` against live Excel: 8 addins enumerated (PowerMap,
+  Power Pivot, Acrobat PDFMaker, Data Streamer, plus XLL/VBA Analysis
+  ToolPak / Solver / Euro Tools). Loaded vs not-loaded correctly reflected.
+- `solidworks list-addins` against live SW 2026 SP1.1: 25 addins total
+  matching the dual-registry lesson's predictions.
+- All seven plugins build clean; the four Windows Office plugins
+  compile against `Microsoft.Office.Core.COMAddIn` (shared Office
+  plumbing, not per-app namespace — a build error caught the wrong
+  assumption mid-implementation).
+- `list-commands` shows `list-addins` as `(plugin)` source for every
+  plugin that has it.
+
 ## [0.5.0] — withdraw v0.4.2 alias preamble; ship visible scaffolding + smart CS0104 hints
 
 **Breaking change** in the plugin contract (justifies the minor-version

@@ -108,6 +108,7 @@ public sealed class ExcelPlugin : IComBridgePlugin
         new InfoCommand(),
         new DumpSheetCommand(),
         new NewScriptCommand(),
+        new ListAddinsCommand(),
     };
 
     /// <summary>

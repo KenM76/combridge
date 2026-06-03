@@ -58,6 +58,7 @@ public sealed class PowerPointPlugin : IComBridgePlugin
     {
         new PptInfoCommand(),
         new PptNewScriptCommand(),
+        new PptListAddinsCommand(),
     };
 
     // PowerPoint per-presentation file monikers in the ROT.

@@ -56,6 +56,7 @@ public sealed class OutlookPlugin : IComBridgePlugin
         new OlInfoCommand(),
         new OlSearchCommand(),
         new OlNewScriptCommand(),
+        new OlListAddinsCommand(),
     };
 
     // Outlook has no per-document moniker concept (it's a MAPI session, not

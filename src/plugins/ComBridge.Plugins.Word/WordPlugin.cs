@@ -49,6 +49,7 @@ public sealed class WordPlugin : IComBridgePlugin
     {
         new WdInfoCommand(),
         new WdNewScriptCommand(),
+        new WdListAddinsCommand(),
     };
 
     // Word registers per-document file monikers in the ROT, same as Excel.

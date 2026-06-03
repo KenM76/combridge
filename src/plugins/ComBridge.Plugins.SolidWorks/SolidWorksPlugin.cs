@@ -79,6 +79,7 @@ public sealed class SolidWorksPlugin : IComBridgePlugin
     public IEnumerable<IBridgeCommand> Commands => new IBridgeCommand[]
     {
         new ActiveDocCommand(),
+        new SwListAddinsCommand(),
     };
 
     /// <summary>

@@ -41,6 +41,7 @@ public sealed class WordMacPlugin : IComBridgePlugin
         new WordMacInfoCommand(),
         new WordMacExtractTextCommand(),
         new WordMacDocStatsCommand(),
+        new WordMacListAddinsCommand(),
     };
 
     public List<(object Root, SessionInfo Info)> FindSessions()
