@@ -4,6 +4,150 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — Outlook search v2: multi-term + word matching + sender + EntryID, and new `outlook get`
+
+Addresses `FR_outlook_search_v2_multiterm_sender_match_and_get.md` in full
+(all 6 items). Both Windows and macOS Outlook plugins updated for parity.
+
+**Breaking change** in CLI output (justified per the FR's "we're the only
+users" note — backward compatibility deliberately not preserved). The
+`outlook search` columns now include `matched`, `entryid`, and `storeid`
+on every row (no longer flag-gated), and defaults changed where the old
+default was wrong. Wrappers built against v0.6.x output need their
+column expectations updated.
+
+### Why withdraw the v0.4.0 behavior
+
+The v0.4.0 implementation was single-term, substring-only, subject/body-only,
+since-only, and emitted no EntryID. The FR documented a real
+"cast a wide net" task (searching for a Gasspring.ca order across two
+mailboxes for a US$313.89 charge) where every one of those gaps blocked
+progress. Specifically, substring matching of `pdac` against a base64
+URL-tracking blob `…ZPDACfM5…` matched a Sudbury meal newsletter — the
+kind of systematic false positive modern marketing mail generates by
+design.
+
+### Changed defaults (FR § "What I'd ship instead")
+
+| Setting | Old default | New default | Why |
+|---|---|---|---|
+| `--match` | implicit substring | **`word`** (ci_phrasematch on indexed; LIKE+regex fallback) | substring is just wrong for marketing mail; the fix should be the default |
+| `--fields` | `subject,body` | **`subject,body,from`** | if you can search the sender for free, you almost always want to |
+| EntryID/StoreID emission | not emitted | **always emitted** | connects `search` → `get` without a flag |
+
+### Added — `outlook search` v2
+
+- **Multi-term**: `--query` is now repeatable AND accepts comma-separated terms.
+  Both forms compose. `--query "a,b" --query c` → three terms ORed.
+- **Sender field**: `--fields` accepts `from` (alias `sender`), mapping to
+  both `urn:schemas:httpmail:fromname` (display) and `fromemail` (SMTP
+  address). Default fields now include `from`.
+- **Word matching**: `--match word|substring`. `word` (default) uses DASL
+  `ci_phrasematch` on content-indexed stores. Per-folder try/catch falls
+  back to `LIKE` + C#-side `\bterm\b` regex when `ci_phrasematch` throws
+  "condition is not valid" (the non-indexed-store signal). Either path
+  produces the same word-boundary semantics.
+- **Date window**: `--until yyyy-MM-dd` mirrors `--since`. Together they
+  form a closed interval. Either alone is open on the other end.
+- **`matched` column**: every row lists the term(s) that hit, computed
+  by a C#-side re-scan of each Restrict candidate against
+  (term × field) regex pairs. The same re-scan drops word-mode false
+  positives that DASL LIKE let through but `\bterm\b` rejects.
+- **`entryid` + `storeid` columns**: always emitted on every row. EntryIDs
+  are only unique within a store, so both are needed to call
+  `GetItemFromID(entryID, storeID)` reliably.
+
+### Added — new `outlook get` command
+
+Resolves an item by either path:
+
+- `--id <EntryID> [--store <substr>]` — direct fetch via
+  `NameSpace.GetItemFromID(entryID, storeID)`. Fast and precise. The
+  `--store` substring is resolved to the matching store's `StoreID`
+  before lookup; without it, GetItemFromID searches the default store
+  and may miss items in other accounts.
+- `--subject <substr> [--store <substr>] [--folder <substr>] [--max N]` —
+  recursive walk for interactive use when you don't have an EntryID
+  handy. Returns the first `--max` matches (default 1).
+
+Output is a one-block-per-item plain-text dump with labeled headers
+(`Subject`, `From`, `To`, `Cc`, `ReceivedTime`, `Size`, `Folder`,
+`EntryID`, `StoreID`) followed by `[BODY]` with the plain-text content.
+`--html` additionally dumps `[HTMLBODY]`. `--headers` adds the
+attachments list (name + size) and `MessageClass`.
+
+### Verified (live test from the FR's driving task)
+
+Ran the exact Gasspring scenario from the FR against the live mailboxes:
+
+```
+combridge outlook search --query "ace control,acecontrols,313.89,gasspring,forklift,spring" \
+    --match word --since 2026-02-01 --until 2026-03-31 --snippet  /tmp/gasspring.tsv
+```
+
+- **14 hits emitted** (vs the FR's documented 4,412-hit substring flood — a
+  99.7% noise reduction from the word-boundary filter)
+- **First hit** = `Your Gasspring.ca order WS14080CA has been received!` with
+  `matched=313.89,gasspring,spring` (three signal terms — exactly the FR's
+  predicted top-row pattern)
+- **4 stores walked, 257 folders walked, 0 folders required fallback**
+  (entire mailbox content-indexed)
+- **Per-hit EntryID + StoreID emitted in every row**
+
+Then `outlook get --id <EntryID> --store toprops --headers` fetched the
+full order email including:
+- Headers (Subject, From, To, ReceivedTime, Size, Folder, EntryID, StoreID, MessageClass)
+- Attachment list (`MountingDrawing_WS14080CA_8-19-160_8880.pdf`, 200 KB)
+- Full plain-text body with the line items the FR predicted
+  (4× $153.48 gas springs, 8× $59.36 brackets, **Total: US$313.89**)
+
+Both subject-fallback (`--subject "WS14080CA" --store toprops`) and
+direct-ID paths return the same item.
+
+### Mac parity
+
+`OlMacSearchCommand` rewritten to match. Same flag surface, same column
+shape, same `matched`/`entryid`/`storeid` always-emitted output. Mac
+differences (architectural, not behavioral):
+
+- AppleScript `whose` is substring-only — no `ci_phrasematch`. Word-mode
+  always uses the C#-side `\bterm\b` regex post-filter. There's no
+  "fast path" for indexed stores; every search behaves like the Windows
+  fallback path.
+- Per-term separate `whose` queries because Mac Outlook's dictionary
+  doesn't reliably accept compound `whose ... or ...` predicates against
+  messages. Costs `terms × fields` AppleScript evaluations per folder
+  instead of one — measurable on large mailboxes.
+- The `entryid` column is the integer AppleScript exposes via
+  `id of message` (not the opaque hex EntryID Windows uses). Mac has no
+  StoreID concept; we reuse the account name in the `storeid` column for
+  cross-OS schema compatibility.
+- `OlMacGetCommand` (new) accepts `--id <integer>` and resolves via
+  AppleScript `messages whose id is N` walked per account/folder.
+  `--subject` path identical to Windows.
+- Still classic Outlook for Mac only — "New Outlook for Mac" (the 2024+
+  Catalyst UI) restricts the AppleScript dictionary too far.
+
+### Removed
+- v0.4.1's `OlMacApp.Search(...)` programmatic helper and `SearchHit`
+  record. The new search command inlines its own AppleScript; a
+  programmatic equivalent should either shell out to
+  `combridge outlook search` or write its own AppleScript via
+  `Osascript.Run(...)`. Less mechanism, fewer abstractions.
+
+### Files
+- `src/plugins/ComBridge.Plugins.Outlook/OlSearchCommand.cs` (rewritten,
+  new file split from OutlookPlugin.cs)
+- `src/plugins/ComBridge.Plugins.Outlook/OlGetCommand.cs` (new)
+- `src/plugins/ComBridge.Plugins.Outlook/OutlookPlugin.cs` (old inline
+  OlSearchCommand removed; Commands list updated)
+- `src/plugins/ComBridge.Plugins.Outlook.Mac/OlMacSearchCommand.cs` (rewritten)
+- `src/plugins/ComBridge.Plugins.Outlook.Mac/OlMacGetCommand.cs` (new)
+- `src/plugins/ComBridge.Plugins.Outlook.Mac/OutlookMacPlugin.cs` (old
+  inline OlMacSearchCommand removed; Commands list updated)
+- `src/plugins/ComBridge.Plugins.Outlook.Mac/OlMacApp.cs` (Search +
+  SearchHit removed)
+
 ## [0.6.0] — `list-addins` across every plugin (universal diagnostic command)
 
 Adds a new `list-addins` subcommand to every plugin: Excel, Word,
