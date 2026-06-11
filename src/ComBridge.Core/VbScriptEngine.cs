@@ -252,12 +252,20 @@ internal sealed class VbScriptSite : IActiveScriptSite
         //     way. Live-test caught this on SwGlobals.swDocType (the
         //     swDocumentTypes_e enum). Scripts that need the value can
         //     read it off the typed wrapper (e.g. swDoc.GetType()).
-        //   - Skip null values. AddNamedItem registers a name the engine
-        //     will eventually call GetItemInfo for; returning IUnknown=null
-        //     does not give the script a Nothing-equivalent — it produces
-        //     an "unknown name" runtime error. Better to never declare the
-        //     name and let the script's own `If Not IsObject(swDoc) Then`
-        //     guard rail catch the absence cleanly.
+        //   - Skip null reference-type values. EMPIRICAL FINDING:
+        //     registering a name via AddNamedItem and then returning
+        //     S_OK + ppiunkItem=null from GetItemInfo crashes the
+        //     VBScript engine with access violation 0xC0000005 inside
+        //     SetScriptState(SCRIPTSTATE_CONNECTED) — verified live
+        //     2026-06-11 against vbscript.dll on Win11 26200. The docs'
+        //     "If the item cannot be located, this parameter is set to
+        //     NULL" wording suggested null might mean Nothing, but it
+        //     doesn't — the engine simply isn't defensive against null
+        //     dispatch and dereferences it. So null-reference globals
+        //     genuinely have to be skipped. The cost is real: scripts
+        //     can't use `Option Explicit` (the name is undeclared) and
+        //     must use `If Not IsObject(swDrawing)` rather than the
+        //     idiomatic `If swDrawing Is Nothing`. We accept that cost.
         var skippedValueType = new List<string>();
         var skippedNull      = new List<string>();
         foreach (var prop in globals.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -291,7 +299,7 @@ internal sealed class VbScriptSite : IActiveScriptSite
         if (skippedValueType.Count > 0)
             output.WriteLine($"# vbscript host: value-type globals not injected (read via typed wrapper): {string.Join(", ", skippedValueType)}");
         if (skippedNull.Count > 0)
-            output.WriteLine($"# vbscript host: null globals not injected (no active doc/etc.): {string.Join(", ", skippedNull)}");
+            output.WriteLine($"# vbscript host: null globals not injected (no active doc/etc. — guard with `If Not IsObject(<name>)`, not `If <name> Is Nothing`): {string.Join(", ", skippedNull)}");
     }
 
     int IActiveScriptSite.GetLCID(out uint plcid)
@@ -312,6 +320,9 @@ internal sealed class VbScriptSite : IActiveScriptSite
         {
             // Engine asked for a name we didn't register, or the property
             // was null. TYPE_E_ELEMENTNOTFOUND is the documented response.
+            // We MUST NOT return S_OK with ppiunkItem=null here — that
+            // crashes the VBScript engine with 0xC0000005 in
+            // SetScriptState(CONNECTED). Verified live 2026-06-11.
             return unchecked((int)0x8002802B);
         }
 
