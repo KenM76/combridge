@@ -4,6 +4,159 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — VBScript scripting host: run existing SolidWorks/Office VBA macros via `.vbs`
+
+Implements `FR_vbscript_scripting_host.md`. Adds a second script engine
+to `run-script` so `.vbs` files run against the same plugin globals
+(`swApp`/`swDoc`/`xlApp`/etc.) the Roslyn `.csx` host exposes. Same
+`--session` attach, same output capture, same exit-code mapping. The
+`.csx` path is unchanged.
+
+### Why this exists
+
+SolidWorks's entire automation ecosystem is VBA. Every forum macro,
+every recorded macro, every shop's library, every GoEngineer/TriMech
+tutorial. Forcing C# rewrites blocks all of that from joining the
+combridge ecosystem — and the rewrite is expensive (per-API: interop
+interface name, every enum's integer value, the `out`-vs-`ref` PIA
+quirks documented across `personal_rag/solidworks/`). VBScript late
+binding sidesteps every one of those quirks because COM `ByRef`
+out-params match the COM ABI natively. For SW automation specifically,
+**VBScript is more robust than typed C# interop, not less**.
+
+### Architecture
+
+`ScriptHost.RunAsync` now dispatches by file extension:
+
+| Extension | Engine |
+|---|---|
+| `.csx` | Roslyn C# (existing, unchanged) |
+| `.vbs` | New IActiveScript-hosted VBScript engine |
+| `.vba` / `.bas` / `.swp` | Rejected with a clear error (VBA is NOT VBScript; UserForms / `Type` / `Public Const` etc. won't parse — convert to `.vbs` or rewrite as `.csx`) |
+| anything else | Rejected with "supported: .csx, .vbs" |
+
+The VBScript engine is hosted via `CoCreateInstance(CLSID_VBScript)` →
+`IActiveScript` + `IActiveScriptParse64`. The host site
+(`VbScriptSite`) reflects the plugin's globals object and registers
+each public reference-type instance property as a named script item
+via `AddNamedItem` / `GetItemInfo`. No msscript.ocx dependency, runs
+in-process at 64-bit.
+
+### Scope changes vs. the FR (deliberate)
+
+The FR proposed several conveniences I deliberately deferred to keep
+v0.8.0 focused on the core engine. Documented in the FR's
+implementation log:
+
+- **No `.vba` / `.bas` / `.swp` extension aliasing.** Those are VBA
+  file extensions, not VBScript. Accepting them by extension would
+  produce confusing parse errors on syntax the VBScript engine doesn't
+  recognize (UserForms, `Type` declarations, `Public Const`, sigil-
+  prefixed sub visibility). Rejected at the extension dispatcher with
+  a one-paragraph message pointing the author at the conversion path.
+- **No `WScript.Arguments` collection.** `ScriptArgs` (already shared
+  with `.csx`) is the supported way to pass argv. If a real cscript-
+  authored macro needs it later, easy v0.8.1 addition.
+- **No `swconst` pre-injection.** Use integer literals (standard SW-
+  VBScript practice; matches every existing standalone `.vbs`).
+
+### Exit-code mapping (parallel to `.csx`)
+
+| Code | Meaning |
+|---|---|
+| `0` | script ran to completion (or called `WScript.Quit 0`) |
+| `2` | script file not found |
+| `3` | VBScript syntax/parse error |
+| `4` | runtime error (`Err.Raise`, division by zero, unbound name, COM exception) |
+| `5` | host failure (engine `CoCreateInstance` failed, e.g. VBScript removed from this Windows) |
+| any other `int` | value passed to `WScript.Quit(N)` |
+
+Phase detection (parse vs runtime) uses `OnEnterScript` — NOT
+`OnStateChange(SCRIPTSTATE_CONNECTED)`. The CONNECTED state-change
+fires when the script COMPLETES, not when it starts; using it for
+phase classification mis-labels every runtime error as a parse error.
+Caught by a live test (division-by-zero showed exit 0 with "PARSE
+ERROR" tag) and fixed before v0.8.0 shipped.
+
+### Globals injection limitations
+
+`IActiveScriptSite::GetItemInfo` returns named items as IUnknown for
+IDispatch wrapping. Two property categories can't be returned that way
+and are skipped with a host-side warning written above script output:
+
+- **Value-type properties** (boxed primitives, enums): can't be
+  returned as IUnknown. `SwGlobals.swDocType` (a `swDocumentTypes_e`
+  enum) hits this. Scripts that need the value read it via the typed
+  COM wrapper (e.g. `swDoc.GetType`).
+- **Null reference-type properties**: returning IUnknown=null produces
+  an "unknown name" runtime error, not a Nothing-equivalent.
+  `swPart`/`swAssy`/`swDrawing` are skipped when no doc of that type is
+  active. Scripts can guard via `If swDoc Is Nothing Then ...`.
+
+Both skip lists are printed at run start so the author isn't mystified
+when a name they expect comes back as undefined.
+
+### VBScript deprecation — honest disclosure
+
+Microsoft formally deprecated VBScript in 2024 with planned removal
+from a future Windows release. This host depends on the in-box
+`vbscript.dll`. When Microsoft removes it, `CoCreateInstance` will
+return `REGDB_E_CLASSNOTREG` and this command will exit 5 with a
+message pointing to `.csx`. Building on a deprecated runtime is the
+right call here (the existing VBA macro corpus is too valuable to
+leave unintegrated while we still can), but consumers should know
+they're investing in a runtime with a known sunset.
+
+### Verified
+
+Live-tested against the running SolidWorks 2026 SP1.1 session:
+
+```vbscript
+WScript.Echo "SolidWorks version: " & swApp.RevisionNumber
+If swDoc Is Nothing Then WScript.Echo "no doc": WScript.Quit 0
+WScript.Echo "Active doc title: " & swDoc.GetTitle
+WScript.Echo "Active doc path: " & swDoc.GetPathName
+```
+
+Output:
+```
+# vbscript host: value-type globals not injected (read via typed wrapper): swDocType
+# vbscript host: null globals not injected (no active doc/etc.): swPart, swAssy
+SolidWorks version: 34.1.1
+Visible: True
+Active doc title: TS-0220-192192 - TS-0220-192192
+Active doc path: W:\Engineering\Products\TS-0220 Zacon BVD Door in Door - Top Level Assemblies\TS-0220-192192\TS-0220-192192.SLDDRW
+```
+
+Parse-error, runtime-error, and `WScript.Quit(N)` exit-code paths all
+verified.
+
+### Architecture future-proofing
+
+The COM interop layer (`ActiveScriptInterop.cs`) declares CLSIDs for
+BOTH VBScript and JScript (the latter unused in v0.8.0). Adding a
+JScript host in the future is one extension-dispatch case +
+`Type.GetTypeFromCLSID(CLSID_JScript)` instead of `CLSID_VBScript` —
+the rest of the hosting code (site, parser, engine driver) is
+language-agnostic.
+
+PowerShell would be a different hosting story
+(`System.Management.Automation` Runspace, not `IActiveScript`) — left
+for a future FR. Python would be different again (pythonnet or
+subprocess) — also future FR.
+
+### Files added
+- `src/ComBridge.Core/ActiveScriptInterop.cs` — COM interop layer
+  (`IActiveScript`, `IActiveScriptParse64`, `IActiveScriptSite`,
+  `IActiveScriptError`, `EXCEPINFO`, CLSIDs, constants)
+- `src/ComBridge.Core/VbScriptEngine.cs` — engine driver +
+  `VbScriptSite` (IActiveScriptSite implementation) + `WScriptShim`
+  (`Echo` / `Quit`)
+
+### Files changed
+- `src/ComBridge.Core/ScriptHost.cs` — extension-dispatcher prepended
+  to `RunAsync`. Roslyn path unchanged below the switch.
+
 ## [0.7.0] — Outlook search v2: multi-term + word matching + sender + EntryID, and new `outlook get`
 
 Addresses `FR_outlook_search_v2_multiterm_sender_match_and_get.md` in full

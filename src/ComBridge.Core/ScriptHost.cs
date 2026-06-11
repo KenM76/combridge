@@ -65,6 +65,36 @@ public static class ScriptHost
             return 2;
         }
 
+        // Dispatch by extension. New engines are added here — each
+        // engine consumes the same plugin globals object via its own
+        // injection mechanism (Roslyn binds typed; VBScript injects via
+        // AddNamedItem + reflection). See FR_vbscript_scripting_host.md
+        // for the architectural reasoning.
+        string ext = Path.GetExtension(scriptPath).ToLowerInvariant();
+        switch (ext)
+        {
+            case ".csx":
+                break;  // fall through to Roslyn path below
+            case ".vbs":
+                if (!OperatingSystem.IsWindows())
+                {
+                    output.WriteLine("ERROR: .vbs scripts require Windows (in-box VBScript engine).");
+                    return 5;
+                }
+                return await VbScriptEngine.RunAsync(globals, scriptPath, output);
+            case ".vba":
+            case ".bas":
+            case ".swp":
+                output.WriteLine($"ERROR: {ext} files are VBA, not VBScript — combridge can't host them.");
+                output.WriteLine($"       VBA uses UserForms, Type definitions, Public Const etc. that the");
+                output.WriteLine($"       VBScript engine won't parse. Convert to .vbs (delete attach line,");
+                output.WriteLine($"       remove UserForm dependencies), or rewrite as .csx.");
+                return 5;
+            default:
+                output.WriteLine($"ERROR: unknown script extension '{ext}'. Supported: .csx, .vbs");
+                return 5;
+        }
+
         // (Script file is opened as a Stream below, so Roslyn picks up the
         // encoding from a BOM or falls back to UTF-8. Passing a string would
         // drop encoding info and trigger:
