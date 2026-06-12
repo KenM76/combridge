@@ -4,7 +4,49 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] — VBScript scripting host: run existing SolidWorks/Office VBA macros via `.vbs`
+## [0.8.2] — `run-script` now propagates the script's `return N` as the process exit code (contract fix)
+
+Closes `FR_runscript_propagate_script_return_value.md`. A `.csx`
+written as `Console.WriteLine("probe"); return 5;` now exits with
+code **5**, not 0. The documented behavior in `ScriptHost.RunAsync`'s
+XML remarks (and in `LLM/scripting.md` § "Exit codes from scripts" —
+"Returned `int` becomes the script-host's exit code") was a contract
+the implementation hadn't actually been honoring: every successful
+script run was returning 0 regardless of its return value.
+
+### Impact
+
+ScripTree drivers and shell callers can now key red/green status off
+combridge's exit code without parsing the script's output text for
+status markers. The FR was filed from the MergeInstanceMates ScripTree
+tool — `run_merge_instance_mates.py` was parsing stdout for `ERROR:`
+/ `FAIL` strings to reconstruct the status that should have come
+through `$?`. Every future status-bearing `.csx` would have needed the
+same workaround until this shipped.
+
+### Precedence
+
+Bridge-level reserved codes (2 file-not-found, 3 compile error,
+4 script exception, 5 host failure) short-circuit before the script's
+return value is read. The "return N" path is reached ONLY when the
+script ran to completion. Reserved-code collisions (e.g. a script
+returning 4) are the author's problem to avoid — the documented rule
+"non-zero = failure" advises against reusing them for script signaling.
+
+### Verified
+
+- `return 5;` → exit 5 ✓
+- `return 42;` → exit 42 ✓
+- no `return` statement → exit 0 ✓
+- `throw` before `return 99;` → exit 5 (HOST EXCEPTION precedence; the unreached return is correctly ignored) ✓
+
+### VBScript path unaffected
+
+The `.vbs` host already propagates `WScript.Quit(N)` as the exit code
+(verified in v0.8.0's smoke test: `WScript.Quit 42 → exit 42`). This
+patch only touches the Roslyn `.csx` path.
+
+## [0.8.1] — cement null-global skip with empirical crash finding + actionable warning
 
 Implements `FR_vbscript_scripting_host.md`. Adds a second script engine
 to `run-script` so `.vbs` files run against the same plugin globals

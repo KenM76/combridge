@@ -190,6 +190,18 @@ public static class ScriptHost
                 output.WriteLine("SCRIPT EXCEPTION: " + state.Exception);
                 return 4;
             }
+            // Propagate the script's `return N` as the process exit code,
+            // honoring the contract documented in this method's XML
+            // remarks and in LLM/scripting.md § "Exit codes from scripts".
+            // Bridge-level reserved codes (2 file-not-found, 3 compile
+            // error, 4 script exception, 5 host failure) have already
+            // short-circuited above; this path is only reached when the
+            // script ran to completion. Reserved-code collisions
+            // (e.g. a script that returns 4) are the script author's
+            // problem — the documented rule "non-zero = failure" advises
+            // against reusing them for script signaling. See FR
+            // FR_runscript_propagate_script_return_value.md.
+            if (state.ReturnValue is int code) return code;
             return 0;
         }
         catch (CompilationErrorException ex)
