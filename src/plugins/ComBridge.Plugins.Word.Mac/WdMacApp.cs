@@ -122,8 +122,13 @@ public sealed class WdMacApp
 /// wraps the Mac AppleScript surface. Parallels the Windows
 /// <c>WdGlobals</c> structure (same identifier name, different type).
 /// </summary>
-public sealed class WdMacGlobals
+public sealed class WdMacGlobals : ComBridge.Core.IScriptContext
 {
     public WdMacApp wdApp { get; }
+
+    // Host-injected I/O channels — see ComBridge.Core.IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
+
     internal WdMacGlobals() { wdApp = new WdMacApp(); }
 }

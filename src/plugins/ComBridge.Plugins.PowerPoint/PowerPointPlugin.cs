@@ -9,11 +9,15 @@ namespace ComBridge.Plugins.PowerPoint;
 /// <c>_Application</c> dispinterface to match what ROT-fetched COM objects
 /// expose (same reasoning as the Excel/Word plugins).
 /// </summary>
-public sealed class PptGlobals
+public sealed class PptGlobals : IScriptContext
 {
     public Pp._Application pptApp { get; }
     public Pp.Presentation? pptPres { get; }
     public Pp.Slide? pptSlide { get; }
+
+    // Host-injected I/O channels — see IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
 
     internal PptGlobals(Pp._Application app)
     {

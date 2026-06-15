@@ -10,7 +10,7 @@ namespace ComBridge.Plugins.SolidWorks;
 /// API naming convention (swApp, swDoc, swPart, swAssy, swDrawing) so scripts
 /// read like the SW macro recorder output and the official sample code.
 /// </summary>
-public sealed class SwGlobals
+public sealed class SwGlobals : IScriptContext
 {
     public ISldWorks swApp { get; }
     public IModelDoc2? swDoc { get; }
@@ -18,6 +18,11 @@ public sealed class SwGlobals
     public IAssemblyDoc? swAssy { get; }
     public IDrawingDoc? swDrawing { get; }
     public swDocumentTypes_e swDocType { get; }
+
+    // Host-injected I/O channels — populated by RunScriptCommand before
+    // the script runs. See IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
 
     internal SwGlobals(ISldWorks app)
     {

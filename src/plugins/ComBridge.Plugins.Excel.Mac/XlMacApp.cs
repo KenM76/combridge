@@ -167,9 +167,13 @@ end tell".Trim();
 /// <c>ExcelGlobals</c> structure but with a different type — scripts that
 /// want to work on both OSes must check or branch.
 /// </summary>
-public sealed class XlMacGlobals
+public sealed class XlMacGlobals : ComBridge.Core.IScriptContext
 {
     public XlMacApp xlApp { get; }
+
+    // Host-injected I/O channels — see ComBridge.Core.IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
 
     internal XlMacGlobals()
     {

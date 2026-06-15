@@ -111,8 +111,13 @@ end tell".Trim();
 
 }
 
-public sealed class OlMacGlobals
+public sealed class OlMacGlobals : ComBridge.Core.IScriptContext
 {
     public OlMacApp olApp { get; }
+
+    // Host-injected I/O channels — see ComBridge.Core.IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
+
     internal OlMacGlobals() { olApp = new OlMacApp(); }
 }

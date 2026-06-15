@@ -13,11 +13,15 @@ namespace ComBridge.Plugins.Outlook;
 /// access folders, items, and accounts.
 /// </para>
 /// </summary>
-public sealed class OlGlobals
+public sealed class OlGlobals : IScriptContext
 {
     public Ol._Application olApp { get; }
     public Ol.NameSpace olNs { get; }
     public Ol.Explorer? olExplorer { get; }
+
+    // Host-injected I/O channels — see IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
 
     internal OlGlobals(Ol._Application app)
     {

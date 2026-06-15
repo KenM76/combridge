@@ -4,6 +4,181 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — `run-script` becomes a clean Unix filter: `ScriptArgs` in, `Stdin` in, stderr separate
+
+Closes TWO FRs that compose into one story:
+
+- `FR_runscript_script_args.md` — argv channel via `ScriptArgs` global
+- `FR_runscript_stdin_and_stderr_separation.md` — `Stdin` global +
+  stop redirecting `Console.Error` to the output writer
+
+Both FRs had been independently filed but never implemented (the
+`Args` FR was misfiled to `Complete\` at some point without code
+shipping — verified by repo-wide grep). v0.9.0 ships both together
+because they compose: a `.csx` becomes a proper Unix-style
+`stdin → stdout(data) + stderr(diag)` filter with argv in and exit
+code out (exit-code FR shipped in v0.8.2). The SWBomExcluded
+ScripTree provider can now retire its PowerShell wrapper shim and
+become plain `combridge solidworks run-script provider.csx -`.
+
+### Added — `IScriptContext` interface
+
+New interface in `ComBridge.Core`:
+
+```csharp
+public interface IScriptContext {
+    string[] ScriptArgs { get; set; }
+    string Stdin { get; set; }
+}
+```
+
+Each plugin's globals class (`SwGlobals`, `ExcelGlobals`, `WdGlobals`,
+`PptGlobals`, `OlGlobals`, plus the four Mac variants) now implements
+this interface. The host (`RunScriptCommand`) casts and sets the
+fields after `CreateGlobals`. Plugins that DON'T implement it just
+skip silently — scripts see empty values, preserving pre-v0.9.0
+behavior.
+
+### Added — `ScriptArgs` global (FR 1)
+
+CLI tokens between the script path and the trailing output-file
+positional are now available to scripts:
+
+```
+combridge solidworks run-script audit.csx --mode quick --offline X: -
+                                          └────── ScriptArgs ──────┘
+```
+
+Inside the script (both `.csx` and `.vbs`):
+
+```csharp
+// .csx
+foreach (var arg in ScriptArgs) Console.WriteLine(arg);
+return ScriptArgs.Length;
+```
+
+```vbscript
+' .vbs
+For i = 0 To UBound(ScriptArgs)
+    WScript.Echo ScriptArgs(i)
+Next
+```
+
+Empty array when no extra tokens were passed.
+
+### Added — `Stdin` global (FR 2 item 1)
+
+If the calling process redirected stdin to combridge (a pipeline, a
+here-doc, a file redirect), the full stream is read eagerly at command
+entry and exposed to the script as `Stdin`. Empty string when stdin
+isn't redirected.
+
+```csharp
+// ScripTree provider .csx — receives request as JSON on stdin:
+var req = JsonSerializer.Deserialize<ProviderRequest>(Stdin);
+// ... build choices ...
+Console.WriteLine(JsonSerializer.Serialize(new { choices, choice_labels }));
+```
+
+**Stdin-timeout trap** (caught during smoke-test, important): the
+naive implementation `if (Console.IsInputRedirected)
+ReadToEndAsync()` **hangs forever** when stdin is inherited-but-empty
+(common when combridge is invoked from bash subprocesses, Task
+Scheduler, CI runners). `Console.IsInputRedirected` returns `true`
+for "non-terminal" — NOT "has data available." The fix:
+`ReadStdinWithTimeoutAsync` uses the underlying stream's `ReadAsync`
+with a 250 ms cancellation token, extended per chunk so slow
+producers aren't truncated. Real producers deliver the first bytes
+in microseconds; empty-inherited-handle invocations collapse to "".
+See `personal_rag/claude_code/lesson_20260615_console_isinputredirected_inherited_handle_hang.md`.
+
+### Changed — `Console.Error` no longer redirected to `<out>` (FR 2 item 2)
+
+Pre-v0.9.0 `ScriptHost.RunAsync` did:
+
+```csharp
+Console.SetOut(output);
+Console.SetError(output);   // ← merged stderr into the <out> writer
+```
+
+So a script's `Console.Error.WriteLine(...)` corrupted any structured
+data on stdout — a provider that needed to emit pure JSON had to
+forbid all diagnostics on the success path. v0.9.0 leaves
+`Console.Error` alone:
+
+```csharp
+Console.SetOut(output);
+// Console.Error flows to the process's real stderr (cleaner filter shape)
+```
+
+Host-emitted diagnostics (compile errors, `script not found`,
+`SCRIPT EXCEPTION`) already go through `output.WriteLine(...)`
+directly and are unaffected. Only the SCRIPT's `Console.Error`
+changes destination.
+
+### Verified
+
+Full SWBomExcluded provider pattern — stdin in, args in, stdout pure
+JSON, stderr diagnostics:
+
+```bash
+echo '{"target_file":"foo.SLDDRW"}' | combridge solidworks run-script \
+    full_filter.csx --x 1 --y 2 /tmp/out.json 2>/tmp/diag.txt
+```
+
+Result:
+- `/tmp/out.json` contains clean JSON (parser-safe):
+  `{ "received_target": "foo.SLDDRW", "arg_count": 4, "args": ["--x","1","--y","2"] }`
+- `/tmp/diag.txt` contains the diagnostic:
+  `[diag] received 29 bytes on stdin, 4 args`
+- combridge exits 0
+
+Plus the empty-stdin no-hang case (Test 1), real-pipe case (Test 2),
+and stderr-split case (Test 3) — all pass.
+
+### Impact on existing scripts
+
+Mostly none — both fields default to empty when unused. The one
+behavior change worth noting: any existing `.csx` that wrote
+diagnostics via `Console.Error.WriteLine(...)` expecting them to land
+in `<out>` will now write to the process's real stderr instead. This
+is the Unix-correct behavior; scripts that need the old merge can
+explicitly redirect with `Console.SetError(Console.Out)` at the top
+of the file.
+
+### Files
+
+Added:
+- `src/ComBridge.Core/IScriptContext.cs`
+
+Changed:
+- `src/ComBridge.Core/Commands/RunScriptCommand.cs` — populates
+  `ScriptArgs` + `Stdin` on globals before invoking host;
+  `ReadStdinWithTimeoutAsync` helper
+- `src/ComBridge.Core/ScriptHost.cs` — removed `Console.SetError`
+- `src/plugins/ComBridge.Plugins.SolidWorks/SolidWorksPlugin.cs` —
+  `SwGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.Excel/ExcelPlugin.cs` —
+  `ExcelGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.Word/WordPlugin.cs` —
+  `WdGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.PowerPoint/PowerPointPlugin.cs` —
+  `PptGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.Outlook/OutlookPlugin.cs` —
+  `OlGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.Excel.Mac/XlMacApp.cs` —
+  `XlMacGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.Word.Mac/WdMacApp.cs` —
+  `WdMacGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.PowerPoint.Mac/PptMacApp.cs` —
+  `PptMacGlobals` implements `IScriptContext`
+- `src/plugins/ComBridge.Plugins.Outlook.Mac/OlMacApp.cs` —
+  `OlMacGlobals` implements `IScriptContext`
+
+Both FRs moved to `Complete\` with implementation log stamps.
+The `Args` FR's old "Status: PROPOSED" header was preserved with a
+note that it had been misfiled prior to actual implementation.
+
 ## [0.8.2] — `run-script` now propagates the script's `return N` as the process exit code (contract fix)
 
 Closes `FR_runscript_propagate_script_return_value.md`. A `.csx`

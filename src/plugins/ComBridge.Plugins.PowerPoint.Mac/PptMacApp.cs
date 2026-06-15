@@ -106,8 +106,13 @@ end tell".Trim();
     }
 }
 
-public sealed class PptMacGlobals
+public sealed class PptMacGlobals : ComBridge.Core.IScriptContext
 {
     public PptMacApp pptApp { get; }
+
+    // Host-injected I/O channels — see ComBridge.Core.IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
+
     internal PptMacGlobals() { pptApp = new PptMacApp(); }
 }

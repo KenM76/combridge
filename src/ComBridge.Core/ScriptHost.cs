@@ -148,11 +148,17 @@ public static class ScriptHost
             .WithFilePath(Path.GetFullPath(scriptPath))
             .WithEmitDebugInformation(true);
 
-        // Redirect script Console.* into our output writer.
+        // Redirect script Console.Out into our output writer. Console.Error
+        // is left alone (v0.9.0 change): the script's stderr flows to the
+        // process's real stderr, so a .csx becomes a proper Unix-style
+        // stdin->stdout(data) + stderr(diag) filter — composable in
+        // pipelines and usable as a ScripTree provider that emits clean
+        // JSON on stdout while still logging diagnostics. Host diagnostics
+        // (compile errors, "script not found", SCRIPT EXCEPTION) go
+        // through `output.WriteLine(...)` directly and are unaffected.
+        // See FR_runscript_stdin_and_stderr_separation.md item 2.
         var originalOut = Console.Out;
-        var originalErr = Console.Error;
         Console.SetOut(output);
-        Console.SetError(output);
         try
         {
             // Roslyn's internal scripting host creates its own AssemblyLoadContext
@@ -217,7 +223,6 @@ public static class ScriptHost
         finally
         {
             Console.SetOut(originalOut);
-            Console.SetError(originalErr);
         }
     }
 

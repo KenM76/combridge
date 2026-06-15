@@ -16,11 +16,15 @@ namespace ComBridge.Plugins.Excel;
 /// instances. The dispinterface has the same member surface scripts care about.
 /// </para>
 /// </summary>
-public sealed class ExcelGlobals
+public sealed class ExcelGlobals : IScriptContext
 {
     public Xl._Application xlApp { get; }
     public Xl.Workbook? xlBook { get; }
     public Xl.Worksheet? xlSheet { get; }
+
+    // Host-injected I/O channels — see IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
 
     internal ExcelGlobals(Xl._Application app)
     {

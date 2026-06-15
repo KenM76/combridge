@@ -9,10 +9,14 @@ namespace ComBridge.Plugins.Word;
 /// dispinterface (NOT the <c>Application</c> co-class) so ROT-fetched COM
 /// objects work correctly — see the Excel plugin's notes for the rationale.
 /// </summary>
-public sealed class WdGlobals
+public sealed class WdGlobals : IScriptContext
 {
     public Wd._Application wdApp { get; }
     public Wd.Document? wdDoc { get; }
+
+    // Host-injected I/O channels — see IScriptContext.
+    public string[] ScriptArgs { get; set; } = Array.Empty<string>();
+    public string Stdin { get; set; } = "";
 
     internal WdGlobals(Wd._Application app)
     {
