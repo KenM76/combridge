@@ -4,6 +4,124 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — Three typed SolidWorks diagnostic commands: `active-config`, `list-configs`, `list-components`
+
+Closes `FR_solidworks_typed_commands.md` (pending 12 days). Brings the
+SW plugin to surface parity with the Office plugins' typed `info` /
+`list-accounts` / `search` commands — these three commands cover the
+"orient yourself" reads every SW automation tool starts with.
+
+### Why this exists
+
+Every SOLIDWORKS automation tool on the host opens with one of three
+reads: "what's the active doc's active config?", "what configs does
+this file have?", or "what components does this assembly contain?"
+The FR documented 6+ existing tools each re-implementing the same
+~10–20 lines of `.csx` boilerplate (open silent + read + format JSON +
+close), each one re-discovering the same SW API gotchas. Shipping
+these as typed commands turns N rediscoveries into one canonical
+implementation that bakes the safety discipline in once.
+
+### Added
+
+**`solidworks active-config`** — emit
+`{"path","title","type","config"}` for the active doc as a single JSON
+line. Empty shape (`{"path":"","title":"","type":0,"config":""}`)
+with exit 0 when no doc is open — that's a legitimate read result,
+not an error.
+
+**`solidworks list-configs [<path>]`** — emit
+`{"path","active","configs":[{"name","is_derived"}...]}`. Three input
+modes:
+- Path given, file already open in this session → reads the live doc
+- Path given, file NOT open → silent read-only `OpenDoc6` → read →
+  `CloseDoc`. ~3s per file
+- Path omitted → uses active doc
+
+**`solidworks list-components [<path>] [--config <name>]`** — emit
+`{"path","config","components":[{"name","path","config","suppressed"}...]}`.
+Walks `IAssemblyDoc.GetComponents(false)` — all components recursively,
+not just top-level. Same path-input modes as `list-configs` plus an
+optional `--config` to walk a specific configuration.
+
+### Safety discipline baked in (the meat of this release)
+
+The FR's strongest argument was "combridge owns the safety discipline."
+All three personal_rag lessons it cited are wired into the
+implementation:
+
+1. **`lesson_20260512_opendoc6_config_arg_silent_bug.md`** —
+   `OpenDoc6` with `""` as the config arg silently loads the
+   LAST-SAVED config, not "the requested one." `list-components` with
+   `--config` passes the actual name through to `OpenDoc6` AND
+   defense-in-depth verifies the active config matches via
+   `ShowConfiguration2` + `ForceRebuild3` if not. `list-configs` uses
+   `""` because it only reads NAMES (config-independent), which is
+   the one legitimate `""` use case per the lesson.
+
+2. **`lesson_20260424_forcerebuild3_invalidates_com_pointers.md`** —
+   `ForceRebuild3` invalidates Feature COM pointers. `list-components`
+   runs the rebuild BEFORE the `GetComponents` walk so no held
+   pointers exist when the rebuild fires.
+
+3. **`lesson_20260424_as_bodyfolder_cast_unreliable.md`** — the C#
+   `as` operator on COM RCWs returned as `object` can silently return
+   null. ALL such casts in this code path are hard-cast inside
+   try/catch: `GetFirstDocument()`, `GetNext()`,
+   `GetConfigurationByName()`, and each component in the
+   `GetComponents()` array. The `as` operator is used only on TYPED
+   COM returns (`OpenDoc6`'s `ModelDoc2`, `ConfigurationManager`,
+   `ActiveConfiguration`) per the lesson's typed-vs-object
+   distinction.
+
+4. **`lesson_20260608_closedoc_leaves_components_resident.md`** —
+   `CloseDoc` only closes the named top-level doc; component refs
+   stay resident. We deliberately do NOT call `CloseAllDocuments(true)`
+   as cleanup — that would destroy the user's unsaved work. The
+   residual-accumulation tradeoff is documented in each command's
+   XML; power users running these many times in a session may see
+   component-doc growth.
+
+### Verified
+
+Live-tested against the running SW 2026 SP1.1 session with
+`TS-0229-180192.SLDASM` open:
+
+```
+combridge solidworks active-config -
+→ {"path":"W:\\Engineering\\Products\\…\\TS-0229-180192.SLDASM",
+   "title":"TS-0229-180192.SLDASM","type":2,
+   "config":"DOORS PARALLEL TO FRAME"}
+
+combridge solidworks list-configs "W:\\Engineering\\…\\TS-0229-180192.SLDASM" -
+→ 3 configs: Default (not derived) + DOORS PARALLEL TO FRAME (derived)
+            + DOORS FULLY CLOSED (derived)
+
+combridge solidworks list-components "W:\\Engineering\\…\\TS-0229-180192.SLDASM" out.json
+→ 769 components (116 unique paths × ~6.6 instances avg)
+→ 65 suppressed correctly identified — proves the active config
+  matches what we asked for, not the OpenDoc6 silent-default trap
+```
+
+Plus error-path verification: `list-configs /tmp/not_a_sw_file.txt`
+→ exit 1 with clear error; `list-components Z:\nonexistent.sldasm`
+→ exit 1 with clear error.
+
+### Files
+
+Added:
+- `src/plugins/ComBridge.Plugins.SolidWorks/SwDocSession.cs` —
+  shared open-or-find-active helper with the lifetime rules
+- `src/plugins/ComBridge.Plugins.SolidWorks/ActiveConfigCommand.cs`
+- `src/plugins/ComBridge.Plugins.SolidWorks/ListConfigsCommand.cs`
+- `src/plugins/ComBridge.Plugins.SolidWorks/ListComponentsCommand.cs`
+
+Changed:
+- `src/plugins/ComBridge.Plugins.SolidWorks/SolidWorksPlugin.cs` —
+  registered the three new commands in the Commands list
+
+FR moved to `Complete\` with implementation log.
+
 ## [0.9.0] — `run-script` becomes a clean Unix filter: `ScriptArgs` in, `Stdin` in, stderr separate
 
 Closes TWO FRs that compose into one story:
