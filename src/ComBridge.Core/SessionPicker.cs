@@ -26,7 +26,22 @@ public static class SessionPicker
     [DllImport("user32.dll")]
     private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
-    private const uint GW_HWNDNEXT = 2;
+    // Used by RankByZOrder to filter out hidden / utility / no-activate
+    // windows that pollute Z-order ranking with mouse-hover-driven
+    // ordering. See FR_sessionpicker_mru_filter_invisible_windows.md.
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowTextLength(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    private const uint GW_HWNDNEXT     = 2;
+    private const int  GWL_EXSTYLE     = -20;
+    private const int  WS_EX_TOOLWINDOW = 0x00000080;
+    private const int  WS_EX_NOACTIVATE = 0x08000000;
 #endif
 
 #if WINDOWS
@@ -62,6 +77,23 @@ public static class SessionPicker
         int z = 0;
         for (var h = GetTopWindow(IntPtr.Zero); h != IntPtr.Zero; h = GetWindow(h, GW_HWNDNEXT))
         {
+            // Filter to actually-user-focusable windows. Without this,
+            // host apps' invisible utility windows (tooltips_class32,
+            // IME input contexts, drop-shadow hosts, addin manager
+            // shells) determine MRU rank because they win the per-PID
+            // first-hit race in the Z-order walk. Their position in
+            // the Z-order is driven by mouse-hover side effects on
+            // host-app UI, NOT by which window the user actually
+            // clicked into last — which is what `--session 1` (MRU)
+            // is supposed to mean. See
+            // FR_sessionpicker_mru_filter_invisible_windows.md for the
+            // diagnostic that nailed this.
+            if (!IsWindowVisible(h))                         { z++; continue; }
+            if (GetWindowTextLength(h) == 0)                 { z++; continue; }
+            var ex = GetWindowLong(h, GWL_EXSTYLE);
+            if ((ex & WS_EX_TOOLWINDOW) != 0)                { z++; continue; }
+            if ((ex & WS_EX_NOACTIVATE) != 0)                { z++; continue; }
+
             GetWindowThreadProcessId(h, out var pid);
             var p = (int)pid;
             if (wanted.Contains(p) && !ranks.ContainsKey(p))

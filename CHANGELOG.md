@@ -4,6 +4,82 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] — Fix: filter invisible/utility windows out of MRU Z-order ranking
+
+Closes `FR_sessionpicker_mru_filter_invisible_windows.md` (a bug
+diagnosed live against multi-instance SolidWorks on 2026-06-16).
+
+### What was wrong
+
+`SessionPicker.RankByZOrder` walked every top-level window and
+recorded the first hit per PID to compute "session #1 = MRU." It
+matched whatever window came up first — including invisible
+`tooltips_class32`, IME contexts, addin-host shells, drop-shadow
+hosts. These are created/destroyed by host apps based on mouse hover
+and popup lifecycle, NOT user focus. Their position in Z-order
+shifted unpredictably between runs, so `--session 1` (the default
+when no session is specified) sometimes attached to the wrong
+instance even when the user had clearly clicked into a specific one
+moments before.
+
+Diagnostic evidence captured live (3-instance SW setup): every
+per-PID first-hit was a `tooltips_class32` — `visible=False`,
+`titleLen=0`, `WS_EX_TOOLWINDOW` set. Mouse hover side-effects on
+host UI were determining MRU rank.
+
+### What's fixed
+
+Four-line filter in `RankByZOrder` skips windows that fail any of:
+
+- `IsWindowVisible` is false
+- `GetWindowTextLength` is zero (no caption)
+- `WS_EX_TOOLWINDOW` set (hidden from Alt-Tab, utility/host windows)
+- `WS_EX_NOACTIVATE` set (never receives focus)
+
+This is the canonical "is this user-focusable?" predicate that every
+Alt-Tab and taskbar implementation has used since Windows 95.
+
+### Who's affected
+
+All Windows plugins flow through `SessionPicker.Enumerate` →
+`RankByZOrder`, so the fix applies plugin-wide:
+
+| Plugin | Affected by the original bug? | Notes |
+|---|---|---|
+| `solidworks` | ✅ Severely — confirmed | Real multi-process; the FR's repro is this case |
+| `excel` | ⚠ Yes when multi-process | Office 365's shared-instance shim usually collapses to one process — see `lesson_20260521_office365_shared_instance_quirk.md` — but when actual multi-instance happens (older Office, `EXCEL.EXE /x`), the same utility windows would have caused the same ranking randomness |
+| `word` | ⚠ Same as Excel | |
+| `powerpoint` | ⚠ Same as Excel | |
+| `outlook` | ✗ No effect | Single-instance MAPI: only one PID to rank, filter is a no-op |
+| Mac plugins (×4) | ✗ Not applicable | Override `FindSessions` with AppleScript; never touch `RankByZOrder` |
+
+### Verified
+
+Live-tested on the same 4-instance SW setup that surfaced the bug:
+`combridge solidworks list-sessions -` returned identical rank
+ordering across three successive runs. Pre-fix behavior had the
+ordering flip between runs based on mouse-hover state.
+
+Cost: ~3 extra Win32 calls per walked window (each sub-microsecond).
+On a ~1500-window workstation, total walk time stays well under a
+millisecond. No measurable user-visible cost.
+
+### Captured findings
+
+Lesson written:
+`C:\personal_rag\claude_code\lesson_20260616_combridge_zorder_mru_visible_filter.md`
+— captures the diagnostic technique (PowerShell Z-order walk
+comparing unfiltered vs filtered first-hit per PID) which generalises
+to any multi-instance focus-tracking probe on Win32.
+
+### Files
+
+Changed:
+- `src/ComBridge.Core/SessionPicker.cs` — 4 new Win32 imports + 3
+  constants + 4-line filter at the top of the `RankByZOrder` loop
+
+FR moved to `Complete\` with implementation log.
+
 ## [0.10.0] — Three typed SolidWorks diagnostic commands: `active-config`, `list-configs`, `list-components`
 
 Closes `FR_solidworks_typed_commands.md` (pending 12 days). Brings the
