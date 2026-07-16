@@ -4,6 +4,104 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] — Fix: `run-script` `.csx` no longer hangs on `OpenDoc6` (Roslyn `await` was bouncing script body across ThreadPool workers)
+
+Closes `FR_runscript_opendoc6_hangs_nonpumping_apartment.md`. Bug
+reported by the SWFormat project 2026-07-16; reproduced live against
+SW 2026 rev 34.2.1.
+
+### What was wrong
+
+A `.csx` calling `swApp.OpenDoc6(diskPath, ...)` from within a
+`run-script` invocation hung indefinitely. The document DID open on
+SW's side (a separate `active-doc` probe confirmed it), but the call
+never returned control to the script — combridge sat at zero output
+until killed. Identical `OpenDoc6` from combridge's own typed plugin
+commands (`list-configs`, `list-components`) worked cleanly in ~3s.
+
+### Root cause
+
+`Program.cs`'s `Main` has no `[STAThread]` attribute — combridge runs
+on the default MTA. `ScriptHost.RunAsync` had:
+
+```csharp
+var state = await script.RunAsync(globals);
+```
+
+Roslyn's `Script<T>.RunAsync` returns a Task whose continuations
+follow ambient async dispatch. In a console app with no
+`SynchronizationContext.Current`, that's `TaskScheduler.Default` →
+**ThreadPool**. So the script body could execute on any ThreadPool
+worker, not the thread that constructed the SolidWorks RCW.
+
+SolidWorks' out-of-proc COM server tracks which thread it received
+the interface pointer on. `OpenDoc6` specifically invokes callbacks
+back into the client during the call. When the script's `OpenDoc6`
+originates from a different thread than the RCW's owner, SW's
+callback goes to the wrong thread and both sides wait forever for a
+reply — classic COM thread-affinity deadlock.
+
+Typed plugin commands don't hit this because their `RunAsync` methods
+have no awaits before their COM calls — everything stays on the
+thread that dispatched to them (which is the RCW-owning thread from
+`Main`).
+
+### Fix
+
+Replace the `await` with a blocking `.GetAwaiter().GetResult()`:
+
+```csharp
+var state = script.RunAsync(globals).GetAwaiter().GetResult();
+```
+
+Forces Roslyn to run the script body synchronously on the caller's
+thread. No ThreadPool bouncing at the script layer. COM thread
+affinity preserved. Since a CLI process running one script has
+nothing else to do concurrently, the blocking behavior is fine.
+
+### Who's affected
+
+- **All `run-script` `.csx` scripts calling thread-affine COM APIs**
+  benefit — the fix is in the plugin-agnostic script host.
+- **SolidWorks specifically**: `OpenDoc6`, `Save3`, `SaveAs3`,
+  `PrintOut4`, anything showing progress UI, anything with a save
+  dialog. In-proc / fire-and-forget calls (`RevisionNumber`,
+  `Visible`, most getters) worked fine before too.
+- **Office (Excel, Word, PowerPoint, Outlook)**: same principle
+  applies; any Office API that invokes callbacks during the call
+  (`Workbooks.Open` with progress, `PrintPreview`, etc.) may have
+  been silently affected. Users who reported "combridge worked for
+  simple reads but hangs for complex operations" from a `.csx`
+  probably hit this.
+- **VBScript path is unaffected** — the IActiveScript engine invokes
+  script code synchronously by design.
+
+### Verified
+
+Same repro that hung on v0.10.1 now runs cleanly:
+
+```
+$ combridge solidworks --session pid:9584 run-script hang.csx out.txt
+exit code: 0
+stdout: "before open" / "after open err=0 warn=0" / "closed"
+```
+
+All other run-script scenarios still work (typed globals reads,
+`NewDocument`, `ScriptArgs`/`Stdin` channels from v0.9.0, exit-code
+propagation from v0.8.2, VBScript engine from v0.8.0).
+
+### Files
+
+Changed:
+- `src/ComBridge.Core/ScriptHost.cs` — one-line change +
+  explanatory comment. Signature of `RunAsync` unchanged; it's still
+  `async Task<int>`, but the inner Roslyn call is now synchronous.
+
+FR moved to `Complete\` with implementation log. Lesson captured at
+`C:\personal_rag\claude_code\lesson_20260716_roslyn_script_runasync_await_bounces_thread_breaks_com_affinity.md`
+so the next implementer of a Roslyn-hosting Windows tool doesn't
+re-derive the same 30-second-timeout diagnostic.
+
 ## [0.10.1] — Fix: filter invisible/utility windows out of MRU Z-order ranking
 
 Closes `FR_sessionpicker_mru_filter_invisible_windows.md` (a bug

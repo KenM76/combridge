@@ -190,7 +190,17 @@ public static class ScriptHost
                 foreach (var d in errors) output.WriteLine(AugmentOfficeDiagnostic(d.ToString()));
                 return 3;
             }
-            var state = await script.RunAsync(globals);
+            // Run the script SYNCHRONOUSLY on the current thread. Using
+            // `await script.RunAsync(globals)` here lets Roslyn's internal
+            // async state machine bounce continuations onto arbitrary
+            // ThreadPool workers, breaking cross-apartment COM calls for
+            // out-of-proc servers that expect thread affinity (notably
+            // SolidWorks' OpenDoc6, which hangs forever if the caller's
+            // thread doesn't match the RCW's originating thread). Plugin
+            // commands don't hit this because they run synchronously on
+            // whatever thread invoked them; the script path used to bounce.
+            // See FR_runscript_opendoc6_hangs_nonpumping_apartment.md.
+            var state = script.RunAsync(globals).GetAwaiter().GetResult();
             if (state.Exception is not null)
             {
                 output.WriteLine("SCRIPT EXCEPTION: " + state.Exception);
